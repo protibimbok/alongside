@@ -40,10 +40,13 @@ fn main() -> Result<()> {
     let mut terminal = setup_terminal()?;
     let result = run(&mut terminal, cli);
     restore_terminal();
-    result
+    // Stop the commands after leaving the TUI, so a slow shutdown doesn't
+    // look like a hang.
+    result?.shutdown();
+    Ok(())
 }
 
-fn run(terminal: &mut Term, cli: Cli) -> Result<()> {
+fn run(terminal: &mut Term, cli: Cli) -> Result<App> {
     let (tx, rx) = mpsc::channel();
 
     let input_tx = tx.clone();
@@ -94,8 +97,7 @@ fn run(terminal: &mut Term, cli: Cli) -> Result<()> {
         }
     }
 
-    app.shutdown();
-    Ok(())
+    Ok(app)
 }
 
 fn setup_terminal() -> Result<Term> {

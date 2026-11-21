@@ -5,7 +5,7 @@ use std::sync::mpsc::Sender;
 use anyhow::Result;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseEventKind};
 
-use crate::process::Proc;
+use crate::process::{self, Proc};
 use crate::ui;
 
 /// Lines of scrollback kept per command.
@@ -192,9 +192,7 @@ impl App {
     /// Stops the active command if needed and starts it again on a clean screen.
     fn restart(&mut self) {
         let pane = &mut self.panes[self.active];
-        if let Status::Running = pane.status {
-            pane.proc.kill();
-        }
+        process::stop_all([&mut pane.proc]);
         let id = Id {
             pane: self.active,
             run: pane.run + 1,
@@ -225,11 +223,7 @@ impl App {
 
     /// Stops every command that is still running.
     pub fn shutdown(&mut self) {
-        for pane in &mut self.panes {
-            if let Status::Running = pane.status {
-                pane.proc.kill();
-            }
-        }
+        process::stop_all(self.panes.iter_mut().map(|pane| &mut pane.proc));
     }
 }
 

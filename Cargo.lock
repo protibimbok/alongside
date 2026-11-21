@@ -261,6 +261,7 @@ dependencies = [
  "anyhow",
  "clap",
  "crossterm",
+ "libc",
  "portable-pty",
  "ratatui",
  "tui-term",
