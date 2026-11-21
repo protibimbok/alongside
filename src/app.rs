@@ -3,13 +3,15 @@
 use std::sync::mpsc::Sender;
 
 use anyhow::Result;
-use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseEventKind};
 
 use crate::process::Proc;
 use crate::ui;
 
 /// Lines of scrollback kept per command.
 const SCROLLBACK: usize = 10_000;
+/// Lines scrolled per mouse wheel step.
+const WHEEL_LINES: isize = 3;
 const MAX_NAME: usize = 20;
 
 /// Identifies one run of a command: its pane, and how often it was restarted.
@@ -106,6 +108,11 @@ impl App {
             // a Release event after every Press. Handling it would run every
             // key twice; Repeat is kept so held keys keep repeating.
             Msg::Input(Event::Key(key)) if key.kind != KeyEventKind::Release => self.on_key(key),
+            Msg::Input(Event::Mouse(mouse)) => match mouse.kind {
+                MouseEventKind::ScrollUp => self.scroll(WHEEL_LINES),
+                MouseEventKind::ScrollDown => self.scroll(-WHEEL_LINES),
+                _ => false,
+            },
             Msg::Input(Event::Resize(cols, rows)) => {
                 self.resize(ui::pane_size(cols, rows));
                 true
@@ -120,6 +127,8 @@ impl App {
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => self.quit = true,
             KeyCode::Char('q') => self.quit = true,
             KeyCode::Char('r') => self.restart(),
+            KeyCode::PageUp => return self.scroll(self.size.0 as isize),
+            KeyCode::PageDown => return self.scroll(-(self.size.0 as isize)),
             KeyCode::Tab => self.active = (self.active + 1) % count,
             KeyCode::BackTab => self.active = (self.active + count - 1) % count,
             KeyCode::Char(c @ '1'..='9') => {
@@ -131,6 +140,13 @@ impl App {
             _ => return false,
         }
         true
+    }
+
+    fn scroll(&mut self, lines: isize) -> bool {
+        let screen = self.panes[self.active].parser.screen_mut();
+        let before = screen.scrollback();
+        screen.set_scrollback(before.saturating_add_signed(lines));
+        screen.scrollback() != before
     }
 
     fn is_current(&self, id: Id) -> bool {

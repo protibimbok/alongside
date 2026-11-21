@@ -2,7 +2,7 @@ use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout};
 use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders};
+use ratatui::widgets::{Block, Borders, Paragraph};
 use tui_term::widget::{Cursor, PseudoTerminal};
 
 use crate::app::{App, Status};
@@ -21,11 +21,32 @@ pub fn draw(frame: &mut Frame, app: &App) {
         .border_style(Style::new().fg(Color::DarkGray));
     let inner = block.inner(bar);
     frame.render_widget(block, bar);
-    frame.render_widget(tab_bar(app), inner);
 
     let screen = app.panes[app.active].parser.screen();
+
+    let status = status(screen);
+    let [tabs, right] = Layout::horizontal([
+        Constraint::Min(0),
+        Constraint::Length(status.width() as u16),
+    ])
+    .areas(inner);
+    frame.render_widget(tab_bar(app), tabs);
+    frame.render_widget(Paragraph::new(status), right);
+
     let terminal = PseudoTerminal::new(screen).cursor(Cursor::default().visibility(false));
     frame.render_widget(terminal, body);
+}
+
+/// Right side of the tab bar: the scroll position.
+fn status(screen: &vt100::Screen) -> Line<'static> {
+    let mut spans = Vec::new();
+    if screen.scrollback() > 0 {
+        spans.push(Span::styled(
+            format!(" ↑{} ", screen.scrollback()),
+            Style::new().fg(Color::Yellow),
+        ));
+    }
+    Line::from(spans)
 }
 
 fn tab_bar(app: &App) -> Line<'_> {
