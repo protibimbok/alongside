@@ -7,7 +7,7 @@ use std::thread;
 use anyhow::{Context, Result};
 use portable_pty::{ChildKiller, CommandBuilder, MasterPty, PtySize, native_pty_system};
 
-use crate::app::Msg;
+use crate::app::{Id, Msg};
 
 /// A command running in its own PTY.
 ///
@@ -19,7 +19,7 @@ pub struct Proc {
 }
 
 impl Proc {
-    pub fn spawn(index: usize, command: &str, size: (u16, u16), tx: Sender<Msg>) -> Result<Self> {
+    pub fn spawn(id: Id, command: &str, size: (u16, u16), tx: Sender<Msg>) -> Result<Self> {
         let pair = native_pty_system()
             .openpty(pty_size(size))
             .context("failed to open a pty")?;
@@ -40,7 +40,7 @@ impl Proc {
                 match reader.read(&mut buf) {
                     Ok(0) | Err(_) => break,
                     Ok(n) => {
-                        if out_tx.send(Msg::Output(index, buf[..n].to_vec())).is_err() {
+                        if out_tx.send(Msg::Output(id, buf[..n].to_vec())).is_err() {
                             break;
                         }
                     }
@@ -50,7 +50,7 @@ impl Proc {
 
         thread::spawn(move || {
             let code = child.wait().map(|status| status.exit_code()).unwrap_or(1);
-            let _ = tx.send(Msg::Exited(index, code));
+            let _ = tx.send(Msg::Exited(id, code));
         });
 
         Ok(Self {
