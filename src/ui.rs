@@ -24,7 +24,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
 
     let screen = app.panes[app.active].parser.screen();
 
-    let status = status(screen);
+    let status = status(app, screen);
     let [tabs, right] = Layout::horizontal([
         Constraint::Min(0),
         Constraint::Length(status.width() as u16),
@@ -33,12 +33,13 @@ pub fn draw(frame: &mut Frame, app: &App) {
     frame.render_widget(tab_bar(app), tabs);
     frame.render_widget(Paragraph::new(status), right);
 
-    let terminal = PseudoTerminal::new(screen).cursor(Cursor::default().visibility(false));
+    let show_cursor = app.input_mode && screen.scrollback() == 0 && !screen.hide_cursor();
+    let terminal = PseudoTerminal::new(screen).cursor(Cursor::default().visibility(show_cursor));
     frame.render_widget(terminal, body);
 }
 
-/// Right side of the tab bar: the scroll position.
-fn status(screen: &vt100::Screen) -> Line<'static> {
+/// Right side of the tab bar: the scroll position and the input mode.
+fn status(app: &App, screen: &vt100::Screen) -> Line<'static> {
     let mut spans = Vec::new();
     if screen.scrollback() > 0 {
         spans.push(Span::styled(
@@ -46,6 +47,15 @@ fn status(screen: &vt100::Screen) -> Line<'static> {
             Style::new().fg(Color::Yellow),
         ));
     }
+    let mode = match (app.input_mode, app.send_to_main) {
+        (false, _) => Span::styled(" NORMAL ", Style::new().fg(Color::Black).bg(Color::Blue)),
+        (true, false) => Span::styled(" INPUT ", Style::new().fg(Color::Black).bg(Color::Magenta)),
+        (true, true) => Span::styled(
+            " INPUT ^A ",
+            Style::new().fg(Color::Black).bg(Color::Magenta),
+        ),
+    };
+    spans.push(mode);
     Line::from(spans)
 }
 

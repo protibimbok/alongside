@@ -1,6 +1,6 @@
 //! Spawning commands inside pseudo-terminals.
 
-use std::io::Read;
+use std::io::{Read, Write};
 use std::sync::mpsc::Sender;
 use std::thread;
 
@@ -15,6 +15,7 @@ use crate::app::{Id, Msg};
 /// a waiter thread sends [`Msg::Exited`] once the child is gone.
 pub struct Proc {
     master: Box<dyn MasterPty + Send>,
+    writer: Box<dyn Write + Send>,
     killer: Box<dyn ChildKiller + Send + Sync>,
 }
 
@@ -32,6 +33,7 @@ impl Proc {
 
         let killer = child.clone_killer();
         let mut reader = pair.master.try_clone_reader()?;
+        let writer = pair.master.take_writer()?;
 
         let out_tx = tx.clone();
         thread::spawn(move || {
@@ -55,8 +57,17 @@ impl Proc {
 
         Ok(Self {
             master: pair.master,
+            writer,
             killer,
         })
+    }
+
+    /// Sends input to the command, as if typed into its terminal.
+    pub fn write(&mut self, bytes: &[u8]) {
+        let _ = self
+            .writer
+            .write_all(bytes)
+            .and_then(|()| self.writer.flush());
     }
 
     pub fn resize(&self, size: (u16, u16)) {

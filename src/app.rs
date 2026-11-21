@@ -46,6 +46,10 @@ pub struct App {
     pub panes: Vec<Pane>,
     pub active: usize,
     pub quit: bool,
+    /// Keys go to the active command instead of being shortcuts.
+    pub input_mode: bool,
+    /// Ctrl+A was pressed in input mode; the next key is sent literally.
+    pub send_to_main: bool,
     size: (u16, u16),
     tx: Sender<Msg>,
 }
@@ -80,6 +84,8 @@ impl App {
             panes,
             active: 0,
             quit: false,
+            input_mode: false,
+            send_to_main: false,
             size,
             tx,
         })
@@ -122,11 +128,15 @@ impl App {
     }
 
     fn on_key(&mut self, key: KeyEvent) -> bool {
+        if self.input_mode {
+            return self.on_input_key(key);
+        }
         let count = self.panes.len();
         match key.code {
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => self.quit = true,
             KeyCode::Char('q') => self.quit = true,
             KeyCode::Char('r') => self.restart(),
+            KeyCode::Char('i') => self.input_mode = true,
             KeyCode::PageUp => return self.scroll(self.size.0 as isize),
             KeyCode::PageDown => return self.scroll(-(self.size.0 as isize)),
             KeyCode::Tab => self.active = (self.active + 1) % count,
@@ -139,6 +149,32 @@ impl App {
             }
             _ => return false,
         }
+        true
+    }
+
+    /// Input mode: `Esc` leaves it, `Ctrl+A` then `Esc` sends a literal `Esc`
+    /// (and `Ctrl+A` twice a literal `Ctrl+A`). Everything else is forwarded.
+    fn on_input_key(&mut self, key: KeyEvent) -> bool {
+        let ctrl_a =
+            key.code == KeyCode::Char('a') && key.modifiers.contains(KeyModifiers::CONTROL);
+        if std::mem::take(&mut self.send_to_main) {
+            if key.code != KeyCode::Esc && !ctrl_a {
+                self.panes[self.active].proc.write(&[0x01]);
+            }
+        } else if key.code == KeyCode::Esc {
+            self.input_mode = false;
+            return true;
+        } else if ctrl_a {
+            self.send_to_main = true;
+            return true;
+        }
+
+        let pane = &mut self.panes[self.active];
+        if let Some(bytes) = encode_key(key, pane.parser.screen().application_cursor()) {
+            pane.proc.write(&bytes);
+        }
+        // Typing jumps back to the live screen.
+        pane.parser.screen_mut().set_scrollback(0);
         true
     }
 
@@ -205,4 +241,51 @@ fn truncate(text: &str, max: usize) -> String {
         short.push('…');
         short
     }
+}
+
+/// Encodes a key press as the bytes a terminal would send for it.
+fn encode_key(key: KeyEvent, application_cursor: bool) -> Option<Vec<u8>> {
+    let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+    let cursor = |c: char| {
+        let prefix = if application_cursor { "\x1bO" } else { "\x1b[" };
+        format!("{prefix}{c}").into_bytes()
+    };
+    let mut bytes = match key.code {
+        KeyCode::Char(c) if ctrl => match c.to_ascii_lowercase() {
+            c @ 'a'..='z' => vec![c as u8 - b'a' + 1],
+            ' ' | '@' | '2' => vec![0x00],
+            '[' | '3' => vec![0x1b],
+            '\\' | '4' => vec![0x1c],
+            ']' | '5' => vec![0x1d],
+            '^' | '6' => vec![0x1e],
+            '_' | '-' | '7' => vec![0x1f],
+            _ => return None,
+        },
+        KeyCode::Char(c) => c.to_string().into_bytes(),
+        KeyCode::Enter => b"\r".to_vec(),
+        KeyCode::Backspace => vec![0x7f],
+        KeyCode::Tab => b"\t".to_vec(),
+        KeyCode::BackTab => b"\x1b[Z".to_vec(),
+        KeyCode::Esc => vec![0x1b],
+        KeyCode::Up => cursor('A'),
+        KeyCode::Down => cursor('B'),
+        KeyCode::Right => cursor('C'),
+        KeyCode::Left => cursor('D'),
+        KeyCode::Home => cursor('H'),
+        KeyCode::End => cursor('F'),
+        KeyCode::Insert => b"\x1b[2~".to_vec(),
+        KeyCode::Delete => b"\x1b[3~".to_vec(),
+        KeyCode::PageUp => b"\x1b[5~".to_vec(),
+        KeyCode::PageDown => b"\x1b[6~".to_vec(),
+        KeyCode::F(n @ 1..=4) => format!("\x1bO{}", (b'P' + n - 1) as char).into_bytes(),
+        KeyCode::F(n @ 5..=12) => {
+            let code = [15, 17, 18, 19, 20, 21, 23, 24][usize::from(n) - 5];
+            format!("\x1b[{code}~").into_bytes()
+        }
+        _ => return None,
+    };
+    if key.modifiers.contains(KeyModifiers::ALT) {
+        bytes.insert(0, 0x1b);
+    }
+    Some(bytes)
 }
