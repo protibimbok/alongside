@@ -1,0 +1,15 @@
+{
+  "name": "@concurtui/darwin-arm64",
+  "version": "0.1.0",
+  "description": "The darwin-arm64 binary for concurtui",
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "files": [
+    "bin/"
+  ],
+  "preferUnplugged": true
+}

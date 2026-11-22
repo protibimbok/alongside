@@ -1,0 +1,28 @@
+{
+  "name": "concurtui",
+  "version": "0.1.0",
+  "description": "Run several commands in parallel and switch between their output in a TUI",
+  "keywords": [
+    "concurrently",
+    "parallel",
+    "tui",
+    "terminal",
+    "cli"
+  ],
+  "bin": {
+    "concurtui": "bin/concurtui.js"
+  },
+  "files": [
+    "bin/"
+  ],
+  "engines": {
+    "node": ">=16"
+  },
+  "optionalDependencies": {
+    "@concurtui/linux-x64": "0.1.0",
+    "@concurtui/linux-arm64": "0.1.0",
+    "@concurtui/darwin-x64": "0.1.0",
+    "@concurtui/darwin-arm64": "0.1.0",
+    "@concurtui/win32-x64": "0.1.0"
+  }
+}

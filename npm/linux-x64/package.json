@@ -1,0 +1,15 @@
+{
+  "name": "@concurtui/linux-x64",
+  "version": "0.1.0",
+  "description": "The linux-x64 binary for concurtui",
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "files": [
+    "bin/"
+  ],
+  "preferUnplugged": true
+}

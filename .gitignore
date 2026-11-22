@@ -1,2 +1,6 @@
 /target
 /tmp
+
+# Binaries copied into the npm platform packages at release time
+/npm/*-*/bin/
+/npm/node_modules

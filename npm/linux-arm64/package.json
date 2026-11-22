@@ -1,0 +1,15 @@
+{
+  "name": "@concurtui/linux-arm64",
+  "version": "0.1.0",
+  "description": "The linux-arm64 binary for concurtui",
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "files": [
+    "bin/"
+  ],
+  "preferUnplugged": true
+}
