@@ -5,8 +5,9 @@ edition = "2024"
 description = "Run several commands in parallel and switch between their output in a TUI"
 license = "MIT"
 repository = "https://github.com/protibimbok/concurtui"
-keywords = ["tui", "parallel", "terminal", "concurrently", "cli"]
-categories = ["command-line-utilities"]
+readme = "README.md"
+keywords = ["concurrently", "parallel", "tui", "pty", "terminal"]
+categories = ["command-line-utilities", "development-tools"]
 include = ["/src", "/LICENSE", "/README.md"]
 
 [dependencies]
