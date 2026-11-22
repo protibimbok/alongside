@@ -1,0 +1,23 @@
+# Linux packages (.deb, .rpm, .apk) built by the release workflow.
+# NFPM_VERSION and NFPM_ARCH are set per build; paths are relative to the
+# directory nfpm runs in, which holds dist/concurtui and LICENSE.
+name: concurtui
+arch: "${NFPM_ARCH}"
+platform: linux
+version: "${NFPM_VERSION}"
+section: utils
+priority: optional
+maintainer: Saad <sakib.saad.khan@gmail.com>
+description: Run several commands in parallel and switch between their output in a TUI
+license: MIT
+homepage: https://github.com/protibimbok/concurtui
+
+contents:
+  - src: ./dist/concurtui
+    dst: /usr/bin/concurtui
+    file_info:
+      mode: 0755
+  - src: ./LICENSE
+    dst: /usr/share/licenses/concurtui/LICENSE
+    file_info:
+      mode: 0644

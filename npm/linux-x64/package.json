@@ -2,6 +2,11 @@
   "name": "@concurtui/linux-x64",
   "version": "0.1.0",
   "description": "The linux-x64 binary for concurtui",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/protibimbok/concurtui.git"
+  },
+  "license": "MIT",
   "os": [
     "linux"
   ],

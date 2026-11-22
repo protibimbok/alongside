@@ -1,0 +1,290 @@
+# Builds concurtui for every supported platform and publishes it everywhere:
+#   - GitHub Release: tarballs/zip, .deb/.rpm/.apk, checksums.txt
+#   - npm:            concurtui + @concurtui/<platform>
+#   - crates.io:      concurtui
+#   - AUR:            concurtui-bin (scripts/publish-aur.sh)
+#   - pkg-dist:       Homebrew cask + apt repo (protibimbok/pkg-dist picks up the release)
+#
+# Triggered by pushing a version tag (e.g. `git tag v0.2.0 && git push --tags`).
+#
+# Secrets:
+#   AUR_KEY               SSH key for the concurtui-bin AUR package
+#   PKG_DIST_TOKEN        PAT with contents: write on protibimbok/pkg-dist
+# Both jobs fail if their secret is missing, so a release can't go green while
+# silently skipping a channel.
+#
+# npm and crates.io use trusted publishing (OIDC), no long-lived token. A trusted
+# publisher can only be added to a package that already exists, so the very first
+# release falls back to these (delete them once trusted publishing is configured):
+#   NPM_TOKEN             publish rights to concurtui and the @concurtui scope
+#   CARGO_REGISTRY_TOKEN  crates.io token with publish-new + publish-update scopes
+#
+# Publish jobs are safe to re-run: versions that are already published are skipped.
+#
+# Release asset names follow the pkg-dist convention: concurtui_<os>_<arch>.tar.gz
+# and concurtui_<version>_linux_<arch>.deb.
+#
+# cargo-dist isn't used: its npm installer downloads the binary in a postinstall
+# script, while these packages ship the binaries inside per-platform packages.
+
+name: Release
+
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+*"]
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    name: Check version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the tag matches Cargo.toml
+        id: check
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          cargo_version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n1)
+          if [ "$version" != "$cargo_version" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME doesn't match Cargo.toml version $cargo_version"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build ${{ matrix.npm }}
+    needs: version
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { npm: linux-x64, dist: linux_amd64, target: x86_64-unknown-linux-musl, os: ubuntu-latest, cross: true }
+          - { npm: linux-arm64, dist: linux_arm64, target: aarch64-unknown-linux-musl, os: ubuntu-latest, cross: true }
+          - { npm: darwin-x64, dist: darwin_amd64, target: x86_64-apple-darwin, os: macos-latest }
+          - { npm: darwin-arm64, dist: darwin_arm64, target: aarch64-apple-darwin, os: macos-latest }
+          - { npm: win32-x64, dist: windows_amd64, target: x86_64-pc-windows-msvc, os: windows-latest }
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install cross
+        if: matrix.cross
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cross
+
+      - name: Build
+        shell: bash
+        run: |
+          if [ "${{ matrix.cross }}" = "true" ]; then
+            cross build --release --locked --target ${{ matrix.target }}
+          else
+            cargo build --release --locked --target ${{ matrix.target }}
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          # npm platform name + release name, split again by the jobs below.
+          name: bin-${{ matrix.npm }}+${{ matrix.dist }}
+          path: |
+            target/${{ matrix.target }}/release/concurtui
+            target/${{ matrix.target }}/release/concurtui.exe
+          if-no-files-found: error
+
+  github-release:
+    name: GitHub Release
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Install nfpm
+        run: |
+          curl -fsSL https://github.com/goreleaser/nfpm/releases/download/v2.47.0/nfpm_2.47.0_Linux_x86_64.tar.gz \
+            | sudo tar -xz --no-same-owner -C /usr/local/bin nfpm
+
+      - name: Package archives and Linux packages
+        run: |
+          mkdir -p release
+          for dir in artifacts/bin-*; do
+            dist="${dir##*+}"
+            stage="stage/$dist"
+            mkdir -p "$stage"
+            cp "$dir"/* LICENSE "$stage/"
+            chmod +x "$stage"/concurtui*
+
+            case "$dist" in
+              windows_*)
+                (cd "$stage" && zip -q "$GITHUB_WORKSPACE/release/concurtui_$dist.zip" concurtui.exe LICENSE)
+                ;;
+              *)
+                tar -C "$stage" -czf "release/concurtui_$dist.tar.gz" concurtui LICENSE
+                ;;
+            esac
+
+            case "$dist" in
+              linux_*)
+                arch="${dist#linux_}"
+                mkdir -p "$stage/dist" && cp "$stage/concurtui" "$stage/dist/concurtui"
+                for fmt in deb rpm apk; do
+                  (cd "$stage" && NFPM_VERSION="$VERSION" NFPM_ARCH="$arch" \
+                    nfpm package -f "$GITHUB_WORKSPACE/packaging/nfpm.yaml" --packager "$fmt" \
+                    --target "$GITHUB_WORKSPACE/release/concurtui_${VERSION}_linux_${arch}.${fmt}")
+                done
+                ;;
+            esac
+          done
+          cp LICENSE release/
+          (cd release && sha256sum concurtui_* > checksums.txt && cat checksums.txt)
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/*
+          generate_release_notes: true
+
+  npm:
+    name: Publish to npm
+    needs: [version, github-release]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # trusted publishing (OIDC) + provenance
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      # Trusted publishing needs npm >= 11.5.1; Node 22 ships npm 10.
+      - name: Update npm
+        run: npm install -g npm@^11.5.1
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Copy binaries into the platform packages
+        run: |
+          for dir in artifacts/bin-*; do
+            platform="${dir#artifacts/bin-}"
+            platform="${platform%%+*}"
+            mkdir -p "npm/$platform/bin"
+            cp "$dir"/* "npm/$platform/bin/"
+            chmod +x "npm/$platform/bin/"*
+          done
+          ls -l npm/*/bin
+
+      - name: Set every package to ${{ env.VERSION }}
+        run: |
+          node npm/set-version.js "$VERSION"
+          cp LICENSE npm/concurtui/
+          if [ -f README.md ]; then cp README.md npm/concurtui/; fi
+
+      - name: Publish packages
+        env:
+          # Only used when OIDC isn't set up for a package yet (first release).
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          # Platform packages first: the main package depends on them.
+          for dir in linux-x64 linux-arm64 darwin-x64 darwin-arm64 win32-x64 concurtui; do
+            name=$(node -p "require('./npm/$dir/package.json').name")
+            if npm view "$name@$VERSION" version >/dev/null 2>&1; then
+              echo "$name@$VERSION is already published; skipping"
+              continue
+            fi
+            npm publish "./npm/$dir" --access public --provenance
+          done
+
+  crates:
+    name: Publish to crates.io
+    needs: [version, github-release]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # trusted publishing (OIDC)
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      # Exchanges the OIDC token for a 30-minute crates.io token. Fails until the
+      # crate exists and has a trusted publisher, hence the fallback below.
+      - name: Authenticate with crates.io
+        id: auth
+        continue-on-error: true
+        uses: rust-lang/crates-io-auth-action@v1
+
+      - name: Publish concurtui
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token || secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          if [ -z "${CARGO_REGISTRY_TOKEN}" ]; then
+            echo "::error::No crates.io credentials: configure trusted publishing or set CARGO_REGISTRY_TOKEN"
+            exit 1
+          fi
+          if curl -fsS -A "concurtui-release (github.com/protibimbok/concurtui)" \
+              "https://crates.io/api/v1/crates/concurtui/$VERSION" >/dev/null 2>&1; then
+            echo "concurtui $VERSION is already on crates.io; skipping"
+            exit 0
+          fi
+          cargo publish --locked
+
+  aur:
+    name: Publish to AUR
+    needs: github-release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Publish concurtui-bin
+        env:
+          AUR_KEY: ${{ secrets.AUR_KEY }}
+        run: |
+          if [ -z "${AUR_KEY}" ]; then
+            echo "::error::AUR_KEY secret is not set"
+            exit 1
+          fi
+          bash scripts/publish-aur.sh "${GITHUB_REF_NAME}"
+
+  pkg-dist:
+    name: Trigger pkg-dist (Homebrew + apt)
+    needs: github-release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch release-published
+        env:
+          PKG_DIST_TOKEN: ${{ secrets.PKG_DIST_TOKEN }}
+        run: |
+          if [ -z "${PKG_DIST_TOKEN}" ]; then
+            echo "::error::PKG_DIST_TOKEN secret is not set"
+            exit 1
+          fi
+          curl -fsSL -X POST \
+            -H "Authorization: token ${PKG_DIST_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/protibimbok/pkg-dist/dispatches \
+            -d "{\"event_type\":\"release-published\",\"client_payload\":{\"package\":\"concurtui\",\"tag\":\"${GITHUB_REF_NAME}\"}}"

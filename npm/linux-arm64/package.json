@@ -2,6 +2,11 @@
   "name": "@concurtui/linux-arm64",
   "version": "0.1.0",
   "description": "The linux-arm64 binary for concurtui",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/protibimbok/concurtui.git"
+  },
+  "license": "MIT",
   "os": [
     "linux"
   ],
