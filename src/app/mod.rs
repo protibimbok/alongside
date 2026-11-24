@@ -267,3 +267,6 @@ fn encode_key(key: KeyEvent, application_cursor: bool) -> Option<Vec<u8>> {
     }
     Some(bytes)
 }
+
+#[cfg(test)]
+mod tests;

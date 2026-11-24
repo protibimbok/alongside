@@ -87,3 +87,6 @@ fn tab_bar(app: &App) -> Line<'_> {
     }
     Line::from(spans)
 }
+
+#[cfg(test)]
+mod tests;
