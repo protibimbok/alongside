@@ -35,7 +35,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
     let status = status(app, screen);
     let [tabs, right] = Layout::horizontal([
         Constraint::Min(0),
-        Constraint::Length(status.width() as u16),
+        Constraint::Length(u16::try_from(status.width()).unwrap_or(u16::MAX)),
     ])
     .areas(inner);
     frame.render_widget(tab_bar(app), tabs);

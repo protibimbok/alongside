@@ -67,7 +67,7 @@ impl Proc {
 
         let exited_flag = exited.clone();
         thread::spawn(move || {
-            let code = child.wait().map(|status| status.exit_code()).unwrap_or(1);
+            let code = child.wait().map_or(1, |status| status.exit_code());
             exited_flag.store(true, Ordering::SeqCst);
             let _ = tx.send(Msg::Exited { id, code });
         });
@@ -134,14 +134,14 @@ impl Proc {
 /// Sends `signal` to the command's whole process group.
 #[cfg(unix)]
 fn signal_group(pid: u32, signal: libc::c_int) {
-    let Ok(pgid) = libc::pid_t::try_from(pid) else {
+    let Ok(group) = libc::pid_t::try_from(pid) else {
         return;
     };
     // SAFETY: `kill` takes plain integers and has no memory-safety
     // requirements. The pty starts each command as a session leader, so its
     // pid is also its process group id, and a negative pid targets the group.
     unsafe {
-        libc::kill(-pgid, signal);
+        libc::kill(-group, signal);
     }
 }
 

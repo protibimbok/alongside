@@ -100,10 +100,10 @@ impl Pane {
         self.status = Status::Exited(code);
     }
 
-    pub fn scroll(&mut self, lines: isize) -> bool {
+    pub fn scroll(&mut self, lines: i16) -> bool {
         let screen = self.parser.screen_mut();
         let before = screen.scrollback();
-        screen.set_scrollback(before.saturating_add_signed(lines));
+        screen.set_scrollback(before.saturating_add_signed(isize::from(lines)));
         screen.scrollback() != before
     }
 

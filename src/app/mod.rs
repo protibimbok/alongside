@@ -10,7 +10,7 @@ use crate::size::PaneSize;
 use crate::ui;
 
 /// Lines scrolled per mouse wheel step.
-const WHEEL_LINES: isize = 3;
+const WHEEL_LINES: i16 = 3;
 const MAX_NAME: usize = 20;
 
 /// Identifies one run of a command: its pane, and how often it was restarted.
@@ -113,8 +113,6 @@ impl App {
                 }
                 true
             }
-            // From an earlier run of a command that was restarted since.
-            Msg::Output { .. } | Msg::Exited { .. } => false,
             // Windows (and Unix with keyboard enhancement enabled) reports
             // a Release event after every Press. Handling it would run every
             // key twice; Repeat is kept so held keys keep repeating.
@@ -128,7 +126,8 @@ impl App {
                 self.resize(ui::pane_size(cols, rows));
                 true
             }
-            Msg::Input(_) => false,
+            // Unhandled input, and events from an earlier run of a restarted command.
+            Msg::Output { .. } | Msg::Exited { .. } | Msg::Input(_) => false,
         }
     }
 
@@ -137,13 +136,14 @@ impl App {
             return self.on_input_key(key);
         }
         let count = self.panes.len();
+        let page = i16::try_from(self.size.rows).unwrap_or(i16::MAX);
         match key.code {
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => self.quit = true,
             KeyCode::Char('q') => self.quit = true,
             KeyCode::Char('r') => self.restart(),
             KeyCode::Char('i') => self.mode = Mode::Input,
-            KeyCode::PageUp => return self.scroll(self.size.rows as isize),
-            KeyCode::PageDown => return self.scroll(-(self.size.rows as isize)),
+            KeyCode::PageUp => return self.scroll(page),
+            KeyCode::PageDown => return self.scroll(-page),
             KeyCode::Tab => self.active = (self.active + 1) % count,
             KeyCode::BackTab => self.active = (self.active + count - 1) % count,
             KeyCode::Char(c @ '1'..='9') => {
@@ -183,7 +183,7 @@ impl App {
         true
     }
 
-    fn scroll(&mut self, lines: isize) -> bool {
+    fn scroll(&mut self, lines: i16) -> bool {
         self.panes[self.active].scroll(lines)
     }
 
