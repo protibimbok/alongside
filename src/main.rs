@@ -5,7 +5,7 @@ mod size;
 mod ui;
 
 use std::io::{self, Stdout};
-use std::sync::mpsc::{self, RecvTimeoutError};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -38,20 +38,30 @@ const FRAME: Duration = Duration::from_millis(16);
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
-
-    let mut terminal = setup_terminal()?;
-    let result = run(&mut terminal, cli);
-    restore_terminal();
-    // Stop the commands after leaving the TUI, so a slow shutdown doesn't
-    // look like a hang.
-    result?.shutdown();
-    Ok(())
-}
-
-fn run(terminal: &mut Term, cli: Cli) -> Result<App> {
     let (tx, rx) = mpsc::channel();
 
-    let input_tx = tx.clone();
+    let (cols, rows) = crossterm::terminal::size()?;
+    let mut app = App::new(
+        &cli.commands,
+        &cli.names,
+        ui::pane_size(cols, rows),
+        tx.clone(),
+    )?;
+
+    // The TUI is left at the end of this block, before `app` is dropped and
+    // stops the commands, so a slow shutdown doesn't look like a hang.
+    {
+        let mut tui = Tui::enter()?;
+        run(&mut tui.terminal, &mut app, tx, &rx)
+    }
+}
+
+fn run(
+    terminal: &mut Term,
+    app: &mut App,
+    input_tx: Sender<Msg>,
+    rx: &Receiver<Msg>,
+) -> Result<()> {
     thread::spawn(move || {
         while let Ok(event) = event::read() {
             if input_tx.send(Msg::Input(event)).is_err() {
@@ -60,20 +70,12 @@ fn run(terminal: &mut Term, cli: Cli) -> Result<App> {
         }
     });
 
-    let size = terminal.size()?;
-    let mut app = App::new(
-        &cli.commands,
-        &cli.names,
-        ui::pane_size(size.width, size.height),
-        tx,
-    )?;
-
     let mut dirty = true;
     let mut last_draw: Option<Instant> = None;
     while !app.quit {
         let wait = last_draw.map_or(Duration::ZERO, |t| FRAME.saturating_sub(t.elapsed()));
         if dirty && wait.is_zero() {
-            terminal.draw(|frame| ui::draw(frame, &app))?;
+            terminal.draw(|frame| ui::draw(frame, app))?;
             last_draw = Some(Instant::now());
             dirty = false;
         }
@@ -99,20 +101,38 @@ fn run(terminal: &mut Term, cli: Cli) -> Result<App> {
         }
     }
 
-    Ok(app)
+    Ok(())
 }
 
-fn setup_terminal() -> Result<Term> {
-    // Restore the terminal before the default hook prints the panic message.
-    let default_hook = std::panic::take_hook();
-    std::panic::set_hook(Box::new(move |info| {
-        restore_terminal();
-        default_hook(info);
-    }));
+/// The terminal in TUI mode. Dropping it restores the terminal, whichever way
+/// the program leaves the TUI.
+struct Tui {
+    terminal: Term,
+}
 
-    enable_raw_mode()?;
-    execute!(io::stdout(), EnterAlternateScreen, EnableMouseCapture)?;
-    Ok(Terminal::new(CrosstermBackend::new(io::stdout()))?)
+impl Tui {
+    fn enter() -> Result<Self> {
+        // Restore the terminal before the default hook prints the panic message.
+        let default_hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            restore_terminal();
+            default_hook(info);
+        }));
+
+        // Built first, so a failure half way through still restores the terminal.
+        let tui = Self {
+            terminal: Terminal::new(CrosstermBackend::new(io::stdout()))?,
+        };
+        enable_raw_mode()?;
+        execute!(io::stdout(), EnterAlternateScreen, EnableMouseCapture)?;
+        Ok(tui)
+    }
+}
+
+impl Drop for Tui {
+    fn drop(&mut self) {
+        restore_terminal();
+    }
 }
 
 fn restore_terminal() {

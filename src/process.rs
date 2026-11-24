@@ -128,6 +128,14 @@ impl Proc {
     }
 }
 
+/// A command never outlives its `Proc`, so an early return can't leave one
+/// running in the background.
+impl Drop for Proc {
+    fn drop(&mut self) {
+        stop_all([self]);
+    }
+}
+
 /// Stops every running command: terminate, wait up to [`GRACE`], then kill.
 pub fn stop_all<'a>(procs: impl IntoIterator<Item = &'a mut Proc>) {
     let mut running: Vec<_> = procs.into_iter().filter(|p| p.is_running()).collect();

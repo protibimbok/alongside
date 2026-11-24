@@ -176,9 +176,12 @@ impl App {
             pane.resize(size);
         }
     }
+}
 
-    /// Stops every command that is still running.
-    pub fn shutdown(&mut self) {
+/// Stops every command that is still running. They are stopped together, so
+/// they share one grace period instead of each getting its own.
+impl Drop for App {
+    fn drop(&mut self) {
         pane::stop_all(&mut self.panes);
     }
 }
