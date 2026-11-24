@@ -25,6 +25,9 @@ pub struct Proc {
     writer: Box<dyn Write + Send>,
     killer: Box<dyn ChildKiller + Send + Sync>,
     pid: Option<u32>,
+    /// Set by the waiter thread. `Pane::status` records the same fact for the
+    /// UI, but it is only updated by the main loop, which isn't running while
+    /// commands are being stopped.
     exited: Arc<AtomicBool>,
 }
 
@@ -100,10 +103,11 @@ impl Proc {
             return self.kill();
         };
         #[cfg(unix)]
-        unsafe {
-            libc::kill(-(pid as libc::pid_t), libc::SIGTERM);
-        }
-        // windows does not have grouping
+        signal_group(pid, libc::SIGTERM);
+        // Windows has no process groups and no SIGTERM. `taskkill` without
+        // `/F` only posts a close message to windows, which console programs
+        // never see, so the tree is killed outright and the grace period only
+        // covers the time that takes.
         #[cfg(windows)]
         {
             let killed = std::process::Command::new("taskkill")
@@ -121,11 +125,23 @@ impl Proc {
     fn kill(&mut self) {
         #[cfg(unix)]
         if let Some(pid) = self.pid {
-            unsafe {
-                libc::kill(-(pid as libc::pid_t), libc::SIGKILL);
-            }
+            signal_group(pid, libc::SIGKILL);
         }
         let _ = self.killer.kill();
+    }
+}
+
+/// Sends `signal` to the command's whole process group.
+#[cfg(unix)]
+fn signal_group(pid: u32, signal: libc::c_int) {
+    let Ok(pgid) = libc::pid_t::try_from(pid) else {
+        return;
+    };
+    // SAFETY: `kill` takes plain integers and has no memory-safety
+    // requirements. The pty starts each command as a session leader, so its
+    // pid is also its process group id, and a negative pid targets the group.
+    unsafe {
+        libc::kill(-pgid, signal);
     }
 }
 
