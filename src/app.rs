@@ -5,12 +5,10 @@ use std::sync::mpsc::Sender;
 use anyhow::Result;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseEventKind};
 
-use crate::process::{self, Proc};
+use crate::pane::{self, Pane, Status};
 use crate::size::PaneSize;
 use crate::ui;
 
-/// Lines of scrollback kept per command.
-const SCROLLBACK: usize = 10_000;
 /// Lines scrolled per mouse wheel step.
 const WHEEL_LINES: isize = 3;
 const MAX_NAME: usize = 20;
@@ -27,20 +25,6 @@ pub enum Msg {
     Input(Event),
     Output(Id, Vec<u8>), // (index, content)
     Exited(Id, u32),     // (index, code)
-}
-
-pub enum Status {
-    Running,
-    Exited(u32),
-}
-
-pub struct Pane {
-    pub name: String,
-    pub parser: vt100::Parser,
-    pub status: Status,
-    command: String,
-    proc: Proc,
-    run: u64,
 }
 
 pub struct App {
@@ -70,15 +54,7 @@ impl App {
                     Some(name) if !name.is_empty() => name.to_string(),
                     _ => truncate(command, MAX_NAME),
                 };
-                let id = Id { pane: i, run: 0 };
-                Ok(Pane {
-                    name,
-                    parser: vt100::Parser::new(size.rows, size.cols, SCROLLBACK),
-                    status: Status::Running,
-                    command: command.clone(),
-                    proc: Proc::spawn(id, command, size, tx.clone())?,
-                    run: 0,
-                })
+                Pane::spawn(i, name, command.clone(), size, &tx)
             })
             .collect::<Result<_>>()?;
         Ok(Self {
@@ -160,7 +136,7 @@ impl App {
             key.code == KeyCode::Char('a') && key.modifiers.contains(KeyModifiers::CONTROL);
         if std::mem::take(&mut self.send_to_main) {
             if key.code != KeyCode::Esc && !ctrl_a {
-                self.panes[self.active].proc.write(&[0x01]);
+                self.panes[self.active].write(&[0x01]);
             }
         } else if key.code == KeyCode::Esc {
             self.input_mode = false;
@@ -172,7 +148,7 @@ impl App {
 
         let pane = &mut self.panes[self.active];
         if let Some(bytes) = encode_key(key, pane.parser.screen().application_cursor()) {
-            pane.proc.write(&bytes);
+            pane.write(&bytes);
         }
         // Typing jumps back to the live screen.
         pane.parser.screen_mut().set_scrollback(0);
@@ -187,43 +163,23 @@ impl App {
     }
 
     fn is_current(&self, id: Id) -> bool {
-        self.panes[id.pane].run == id.run
+        self.panes[id.pane].is_current(id)
     }
 
-    /// Stops the active command if needed and starts it again on a clean screen.
     fn restart(&mut self) {
-        let pane = &mut self.panes[self.active];
-        process::stop_all([&mut pane.proc]);
-        let id = Id {
-            pane: self.active,
-            run: pane.run + 1,
-        };
-        pane.run = id.run;
-        pane.parser = vt100::Parser::new(self.size.rows, self.size.cols, SCROLLBACK);
-        match Proc::spawn(id, &pane.command, self.size, self.tx.clone()) {
-            Ok(proc) => {
-                pane.proc = proc;
-                pane.status = Status::Running;
-            }
-            Err(err) => {
-                pane.parser
-                    .process(format!("concurtui: {err:#}\r\n").as_bytes());
-                pane.status = Status::Exited(1);
-            }
-        }
+        self.panes[self.active].restart(self.size, &self.tx);
     }
 
     fn resize(&mut self, size: PaneSize) {
         self.size = size;
         for pane in &mut self.panes {
-            pane.parser.screen_mut().set_size(size.rows, size.cols);
-            pane.proc.resize(size);
+            pane.resize(size);
         }
     }
 
     /// Stops every command that is still running.
     pub fn shutdown(&mut self) {
-        process::stop_all(self.panes.iter_mut().map(|pane| &mut pane.proc));
+        pane::stop_all(&mut self.panes);
     }
 }
 

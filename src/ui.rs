@@ -5,7 +5,8 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
 use tui_term::widget::{Cursor, PseudoTerminal};
 
-use crate::app::{App, Status};
+use crate::app::App;
+use crate::pane::Status;
 use crate::size::PaneSize;
 
 /// Size of the command pane for a terminal of the given size.
