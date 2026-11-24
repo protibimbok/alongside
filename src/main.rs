@@ -24,10 +24,12 @@ use app::{App, Msg};
 #[derive(Parser)]
 #[command(version, about)]
 struct Cli {
-    #[arg(short, long, value_delimiter = ',')]
+    /// Tab labels, comma-separated and in command order [default: the command text]
+    #[arg(short, long, value_delimiter = ',', value_name = "NAME")]
     names: Vec<String>,
 
-    #[arg(required = true)]
+    /// Commands to run, each one quoted as a single argument
+    #[arg(required = true, value_name = "COMMAND")]
     commands: Vec<String>,
 }
 
