@@ -9,17 +9,20 @@ use crate::app::App;
 use crate::pane::Status;
 use crate::size::PaneSize;
 
+/// Rows taken by the tab bar: one line of tabs and its bottom border.
+const BAR_HEIGHT: u16 = 2;
+
 /// Size of the command pane for a terminal of the given size.
 pub fn pane_size(width: u16, height: u16) -> PaneSize {
     PaneSize {
-        rows: height.saturating_sub(2).max(1),
+        rows: height.saturating_sub(BAR_HEIGHT).max(1),
         cols: width.max(1),
     }
 }
 
 pub fn draw(frame: &mut Frame, app: &App) {
     let [bar, body] =
-        Layout::vertical([Constraint::Length(2), Constraint::Min(0)]).areas(frame.area());
+        Layout::vertical([Constraint::Length(BAR_HEIGHT), Constraint::Min(0)]).areas(frame.area());
 
     let block = Block::new()
         .borders(Borders::BOTTOM)
