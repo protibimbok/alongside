@@ -11,15 +11,16 @@ use crate::size::PaneSize;
 /// Lines of scrollback kept per command.
 const SCROLLBACK: usize = 10_000;
 
+#[derive(Clone, Copy)]
 pub enum Status {
     Running,
     Exited(u32),
 }
 
 pub struct Pane {
-    pub name: String,
-    pub parser: vt100::Parser,
-    pub status: Status,
+    name: String,
+    parser: vt100::Parser,
+    status: Status,
     command: String,
     proc: Proc,
     /// The run this pane is showing; bumped on every restart.
@@ -27,6 +28,19 @@ pub struct Pane {
 }
 
 impl Pane {
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn status(&self) -> Status {
+        self.status
+    }
+
+    /// The command's terminal screen, at the current scroll position.
+    pub fn screen(&self) -> &vt100::Screen {
+        self.parser.screen()
+    }
+
     pub fn spawn(
         index: usize,
         name: String,
@@ -75,6 +89,26 @@ impl Pane {
     /// run of a command that was restarted since.
     pub fn is_current(&self, id: Id) -> bool {
         self.id == id
+    }
+
+    /// Draws the command's output on its screen.
+    pub fn process(&mut self, bytes: &[u8]) {
+        self.parser.process(bytes);
+    }
+
+    pub fn set_exited(&mut self, code: u32) {
+        self.status = Status::Exited(code);
+    }
+
+    pub fn scroll(&mut self, lines: isize) -> bool {
+        let screen = self.parser.screen_mut();
+        let before = screen.scrollback();
+        screen.set_scrollback(before.saturating_add_signed(lines));
+        screen.scrollback() != before
+    }
+
+    pub fn scroll_to_bottom(&mut self) {
+        self.parser.screen_mut().set_scrollback(0);
     }
 
     /// Sends bytes to the command, as if they were typed.

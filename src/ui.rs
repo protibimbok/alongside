@@ -5,7 +5,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
 use tui_term::widget::{Cursor, PseudoTerminal};
 
-use crate::app::App;
+use crate::app::{App, Mode};
 use crate::pane::Status;
 use crate::size::PaneSize;
 
@@ -30,7 +30,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
     let inner = block.inner(bar);
     frame.render_widget(block, bar);
 
-    let screen = app.panes[app.active].parser.screen();
+    let screen = app.active_pane().screen();
 
     let status = status(app, screen);
     let [tabs, right] = Layout::horizontal([
@@ -41,7 +41,8 @@ pub fn draw(frame: &mut Frame, app: &App) {
     frame.render_widget(tab_bar(app), tabs);
     frame.render_widget(Paragraph::new(status), right);
 
-    let show_cursor = app.input_mode && screen.scrollback() == 0 && !screen.hide_cursor();
+    let show_cursor =
+        app.mode() != Mode::Normal && screen.scrollback() == 0 && !screen.hide_cursor();
     let terminal = PseudoTerminal::new(screen).cursor(Cursor::default().visibility(show_cursor));
     frame.render_widget(terminal, body);
 }
@@ -55,35 +56,32 @@ fn status(app: &App, screen: &vt100::Screen) -> Line<'static> {
             Style::new().fg(Color::Yellow),
         ));
     }
-    let mode = match (app.input_mode, app.send_to_main) {
-        (false, _) => Span::styled(" NORMAL ", Style::new().fg(Color::Black).bg(Color::Blue)),
-        (true, false) => Span::styled(" INPUT ", Style::new().fg(Color::Black).bg(Color::Magenta)),
-        (true, true) => Span::styled(
-            " INPUT ^A ",
-            Style::new().fg(Color::Black).bg(Color::Magenta),
-        ),
+    let (label, color) = match app.mode() {
+        Mode::Normal => (" NORMAL ", Color::Blue),
+        Mode::Input => (" INPUT ", Color::Magenta),
+        Mode::InputLiteral => (" INPUT ^A ", Color::Magenta),
     };
-    spans.push(mode);
+    spans.push(Span::styled(label, Style::new().fg(Color::Black).bg(color)));
     Line::from(spans)
 }
 
 fn tab_bar(app: &App) -> Line<'_> {
     let mut spans = Vec::new();
-    for (i, pane) in app.panes.iter().enumerate() {
+    for (i, pane) in app.panes().iter().enumerate() {
         if i > 0 {
             spans.push(Span::styled("│", Style::new().fg(Color::DarkGray)));
         }
-        let (mark, color) = match pane.status {
+        let (mark, color) = match pane.status() {
             Status::Running => ("●".to_string(), Color::Reset),
             Status::Exited(0) => ("✓".to_string(), Color::Green),
             Status::Exited(code) => (format!("✗ {code}"), Color::Red),
         };
         let mut style = Style::new().fg(color);
-        if i == app.active {
+        if i == app.active() {
             style = style.bold().reversed();
         }
         spans.push(Span::styled(
-            format!(" {} {} {mark} ", i + 1, pane.name),
+            format!(" {} {} {mark} ", i + 1, pane.name()),
             style,
         ));
     }

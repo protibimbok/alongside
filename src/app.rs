@@ -27,14 +27,22 @@ pub enum Msg {
     Exited { id: Id, code: u32 },
 }
 
+/// What key presses do.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Mode {
+    /// Keys are shortcuts.
+    Normal,
+    /// Keys go to the active command.
+    Input,
+    /// `Ctrl+A` was pressed in input mode; the next key is sent literally.
+    InputLiteral,
+}
+
 pub struct App {
-    pub panes: Vec<Pane>,
-    pub active: usize,
-    pub quit: bool,
-    /// Keys go to the active command instead of being shortcuts.
-    pub input_mode: bool,
-    /// Ctrl+A was pressed in input mode; the next key is sent literally.
-    pub send_to_main: bool,
+    panes: Vec<Pane>,
+    active: usize,
+    quit: bool,
+    mode: Mode,
     size: PaneSize,
     tx: Sender<Msg>,
 }
@@ -61,26 +69,45 @@ impl App {
             panes,
             active: 0,
             quit: false,
-            input_mode: false,
-            send_to_main: false,
+            mode: Mode::Normal,
             size,
             tx,
         })
+    }
+
+    pub fn panes(&self) -> &[Pane] {
+        &self.panes
+    }
+
+    pub fn active(&self) -> usize {
+        self.active
+    }
+
+    pub fn active_pane(&self) -> &Pane {
+        &self.panes[self.active]
+    }
+
+    pub fn mode(&self) -> Mode {
+        self.mode
+    }
+
+    pub fn should_quit(&self) -> bool {
+        self.quit
     }
 
     /// Applies a message and returns whether the screen needs a redraw.
     pub fn handle(&mut self, msg: Msg) -> bool {
         match msg {
             Msg::Output { id, bytes } if self.is_current(id) => {
-                self.panes[id.pane].parser.process(&bytes);
+                self.panes[id.pane].process(&bytes);
                 id.pane == self.active
             }
             Msg::Exited { id, code } if self.is_current(id) => {
-                self.panes[id.pane].status = Status::Exited(code);
+                self.panes[id.pane].set_exited(code);
                 if self
                     .panes
                     .iter()
-                    .all(|p| matches!(p.status, Status::Exited(_)))
+                    .all(|p| matches!(p.status(), Status::Exited(_)))
                 {
                     self.quit = true;
                 }
@@ -106,7 +133,7 @@ impl App {
     }
 
     fn on_key(&mut self, key: KeyEvent) -> bool {
-        if self.input_mode {
+        if self.mode != Mode::Normal {
             return self.on_input_key(key);
         }
         let count = self.panes.len();
@@ -114,7 +141,7 @@ impl App {
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => self.quit = true,
             KeyCode::Char('q') => self.quit = true,
             KeyCode::Char('r') => self.restart(),
-            KeyCode::Char('i') => self.input_mode = true,
+            KeyCode::Char('i') => self.mode = Mode::Input,
             KeyCode::PageUp => return self.scroll(self.size.rows as isize),
             KeyCode::PageDown => return self.scroll(-(self.size.rows as isize)),
             KeyCode::Tab => self.active = (self.active + 1) % count,
@@ -135,32 +162,29 @@ impl App {
     fn on_input_key(&mut self, key: KeyEvent) -> bool {
         let ctrl_a =
             key.code == KeyCode::Char('a') && key.modifiers.contains(KeyModifiers::CONTROL);
-        if std::mem::take(&mut self.send_to_main) {
+        if std::mem::replace(&mut self.mode, Mode::Input) == Mode::InputLiteral {
             if key.code != KeyCode::Esc && !ctrl_a {
                 self.panes[self.active].write(&[0x01]);
             }
         } else if key.code == KeyCode::Esc {
-            self.input_mode = false;
+            self.mode = Mode::Normal;
             return true;
         } else if ctrl_a {
-            self.send_to_main = true;
+            self.mode = Mode::InputLiteral;
             return true;
         }
 
         let pane = &mut self.panes[self.active];
-        if let Some(bytes) = encode_key(key, pane.parser.screen().application_cursor()) {
+        if let Some(bytes) = encode_key(key, pane.screen().application_cursor()) {
             pane.write(&bytes);
         }
         // Typing jumps back to the live screen.
-        pane.parser.screen_mut().set_scrollback(0);
+        pane.scroll_to_bottom();
         true
     }
 
     fn scroll(&mut self, lines: isize) -> bool {
-        let screen = self.panes[self.active].parser.screen_mut();
-        let before = screen.scrollback();
-        screen.set_scrollback(before.saturating_add_signed(lines));
-        screen.scrollback() != before
+        self.panes[self.active].scroll(lines)
     }
 
     fn is_current(&self, id: Id) -> bool {

@@ -74,7 +74,7 @@ fn run(
 
     let mut dirty = true;
     let mut last_draw: Option<Instant> = None;
-    while !app.quit {
+    while !app.should_quit() {
         let wait = last_draw.map_or(Duration::ZERO, |t| FRAME.saturating_sub(t.elapsed()));
         if dirty && wait.is_zero() {
             terminal.draw(|frame| ui::draw(frame, app))?;
