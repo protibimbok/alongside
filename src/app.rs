@@ -6,6 +6,7 @@ use anyhow::Result;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseEventKind};
 
 use crate::process::{self, Proc};
+use crate::size::PaneSize;
 use crate::ui;
 
 /// Lines of scrollback kept per command.
@@ -50,7 +51,7 @@ pub struct App {
     pub input_mode: bool,
     /// Ctrl+A was pressed in input mode; the next key is sent literally.
     pub send_to_main: bool,
-    size: (u16, u16),
+    size: PaneSize,
     tx: Sender<Msg>,
 }
 
@@ -58,7 +59,7 @@ impl App {
     pub fn new(
         commands: &[String],
         names: &[String],
-        size: (u16, u16),
+        size: PaneSize,
         tx: Sender<Msg>,
     ) -> Result<Self> {
         let panes = commands
@@ -72,7 +73,7 @@ impl App {
                 let id = Id { pane: i, run: 0 };
                 Ok(Pane {
                     name,
-                    parser: vt100::Parser::new(size.0, size.1, SCROLLBACK),
+                    parser: vt100::Parser::new(size.rows, size.cols, SCROLLBACK),
                     status: Status::Running,
                     command: command.clone(),
                     proc: Proc::spawn(id, command, size, tx.clone())?,
@@ -137,8 +138,8 @@ impl App {
             KeyCode::Char('q') => self.quit = true,
             KeyCode::Char('r') => self.restart(),
             KeyCode::Char('i') => self.input_mode = true,
-            KeyCode::PageUp => return self.scroll(self.size.0 as isize),
-            KeyCode::PageDown => return self.scroll(-(self.size.0 as isize)),
+            KeyCode::PageUp => return self.scroll(self.size.rows as isize),
+            KeyCode::PageDown => return self.scroll(-(self.size.rows as isize)),
             KeyCode::Tab => self.active = (self.active + 1) % count,
             KeyCode::BackTab => self.active = (self.active + count - 1) % count,
             KeyCode::Char(c @ '1'..='9') => {
@@ -197,9 +198,8 @@ impl App {
             pane: self.active,
             run: pane.run + 1,
         };
-        let (rows, cols) = self.size;
         pane.run = id.run;
-        pane.parser = vt100::Parser::new(rows, cols, SCROLLBACK);
+        pane.parser = vt100::Parser::new(self.size.rows, self.size.cols, SCROLLBACK);
         match Proc::spawn(id, &pane.command, self.size, self.tx.clone()) {
             Ok(proc) => {
                 pane.proc = proc;
@@ -213,10 +213,10 @@ impl App {
         }
     }
 
-    fn resize(&mut self, size: (u16, u16)) {
+    fn resize(&mut self, size: PaneSize) {
         self.size = size;
         for pane in &mut self.panes {
-            pane.parser.screen_mut().set_size(size.0, size.1);
+            pane.parser.screen_mut().set_size(size.rows, size.cols);
             pane.proc.resize(size);
         }
     }

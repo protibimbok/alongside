@@ -1,5 +1,6 @@
 mod app;
 mod process;
+mod size;
 mod ui;
 
 use std::io::{self, Stdout};

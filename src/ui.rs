@@ -6,10 +6,14 @@ use ratatui::widgets::{Block, Borders, Paragraph};
 use tui_term::widget::{Cursor, PseudoTerminal};
 
 use crate::app::{App, Status};
+use crate::size::PaneSize;
 
-/// Size (rows, cols) of the command pane for a terminal of the given size.
-pub fn pane_size(cols: u16, rows: u16) -> (u16, u16) {
-    (rows.saturating_sub(2).max(1), cols.max(1))
+/// Size of the command pane for a terminal of the given size.
+pub fn pane_size(width: u16, height: u16) -> PaneSize {
+    PaneSize {
+        rows: height.saturating_sub(2).max(1),
+        cols: width.max(1),
+    }
 }
 
 pub fn draw(frame: &mut Frame, app: &App) {

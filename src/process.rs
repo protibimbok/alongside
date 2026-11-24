@@ -8,9 +8,10 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
-use portable_pty::{ChildKiller, CommandBuilder, MasterPty, PtySize, native_pty_system};
+use portable_pty::{ChildKiller, CommandBuilder, MasterPty, native_pty_system};
 
 use crate::app::{Id, Msg};
+use crate::size::PaneSize;
 
 /// How long commands get to exit after being asked to, before being killed.
 const GRACE: Duration = Duration::from_secs(3);
@@ -28,9 +29,9 @@ pub struct Proc {
 }
 
 impl Proc {
-    pub fn spawn(id: Id, command: &str, size: (u16, u16), tx: Sender<Msg>) -> Result<Self> {
+    pub fn spawn(id: Id, command: &str, size: PaneSize, tx: Sender<Msg>) -> Result<Self> {
         let pair = native_pty_system()
-            .openpty(pty_size(size))
+            .openpty(size.into())
             .context("failed to open a pty")?;
         let mut child = pair
             .slave
@@ -84,8 +85,8 @@ impl Proc {
             .and_then(|()| self.writer.flush());
     }
 
-    pub fn resize(&self, size: (u16, u16)) {
-        let _ = self.master.resize(pty_size(size));
+    pub fn resize(&self, size: PaneSize) {
+        let _ = self.master.resize(size.into());
     }
 
     pub fn is_running(&self) -> bool {
@@ -141,15 +142,6 @@ pub fn stop_all<'a>(procs: impl IntoIterator<Item = &'a mut Proc>) {
         if proc.is_running() {
             proc.kill();
         }
-    }
-}
-
-fn pty_size((rows, cols): (u16, u16)) -> PtySize {
-    PtySize {
-        rows,
-        cols,
-        pixel_width: 0,
-        pixel_height: 0,
     }
 }
 
