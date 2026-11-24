@@ -23,8 +23,8 @@ pub struct Id {
 
 pub enum Msg {
     Input(Event),
-    Output(Id, Vec<u8>), // (index, content)
-    Exited(Id, u32),     // (index, code)
+    Output { id: Id, bytes: Vec<u8> },
+    Exited { id: Id, code: u32 },
 }
 
 pub struct App {
@@ -71,11 +71,11 @@ impl App {
     /// Applies a message and returns whether the screen needs a redraw.
     pub fn handle(&mut self, msg: Msg) -> bool {
         match msg {
-            Msg::Output(id, bytes) if self.is_current(id) => {
+            Msg::Output { id, bytes } if self.is_current(id) => {
                 self.panes[id.pane].parser.process(&bytes);
                 id.pane == self.active
             }
-            Msg::Exited(id, code) if self.is_current(id) => {
+            Msg::Exited { id, code } if self.is_current(id) => {
                 self.panes[id.pane].status = Status::Exited(code);
                 if self
                     .panes
@@ -86,7 +86,8 @@ impl App {
                 }
                 true
             }
-            Msg::Output(..) | Msg::Exited(..) => false,
+            // From an earlier run of a command that was restarted since.
+            Msg::Output { .. } | Msg::Exited { .. } => false,
             // Windows (and Unix with keyboard enhancement enabled) reports
             // a Release event after every Press. Handling it would run every
             // key twice; Repeat is kept so held keys keep repeating.

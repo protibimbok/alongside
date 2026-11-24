@@ -53,7 +53,8 @@ impl Proc {
                 match reader.read(&mut buf) {
                     Ok(0) | Err(_) => break,
                     Ok(n) => {
-                        if out_tx.send(Msg::Output(id, buf[..n].to_vec())).is_err() {
+                        let bytes = buf[..n].to_vec();
+                        if out_tx.send(Msg::Output { id, bytes }).is_err() {
                             break;
                         }
                     }
@@ -65,7 +66,7 @@ impl Proc {
         thread::spawn(move || {
             let code = child.wait().map(|status| status.exit_code()).unwrap_or(1);
             exited_flag.store(true, Ordering::SeqCst);
-            let _ = tx.send(Msg::Exited(id, code));
+            let _ = tx.send(Msg::Exited { id, code });
         });
 
         Ok(Self {
