@@ -5,7 +5,7 @@ full-screen TUI. A minimal, zero-config alternative to `concurrently`.
 
 Each command runs in its own pseudo-terminal, so colors, progress bars and
 interactive programs work as they do in a normal terminal. One command's output
-is shown at a time, with a tab bar listing every command and its status.
+is shown at a time, next to a sidebar listing every command and its status.
 
 ## Install
 
@@ -96,21 +96,39 @@ concurtui -n web,api,test "npm run dev" "npm run api" "cargo watch -x test"
 ```
 
 Each argument is one command, run with `sh -c` (`cmd /C` on Windows).
-`-n/--names` sets the tab labels; without it, tabs show the command text.
+`-n/--names` sets the sidebar labels; without it, they show the command text.
+Labels longer than 20 characters are cut short. `-t/--title` adds a top row
+with that text and the working directory.
 
-The tab bar marks each command as running (`●`), exited successfully (green
-`✓`) or failed (red `✗` with the exit code). Exited commands keep their output
-on screen until you restart them or quit.
+The sidebar marks each command as starting (a spinner), running (its number),
+exited successfully (green `✓`) or failed (red `✕`); the exit code is shown
+above the output. Exited commands keep their output on screen until you
+restart them or quit.
+
+A scrollbar appears once a command has more output than fits, and the bottom
+line lists the keys that apply and tells you when new output arrived while you
+were scrolled up. On terminals too small for the sidebar, only the current
+command's output and the bottom line are shown.
 
 ## Keybindings
 
-| Key                          | Action                                        |
-| ---------------------------- | --------------------------------------------- |
-| `Tab` / `Shift+Tab`, `1`–`9` | Switch to the next / previous / nth command   |
-| `r`                          | Restart the current command                   |
-| `PgUp` / `PgDn`, mouse wheel | Scroll through the current command's output   |
-| `i`                          | Input mode: send keystrokes to the command    |
-| `q`, `Ctrl+C`                | Quit                                          |
+| Key                             | Action                                       |
+| ------------------------------- | -------------------------------------------- |
+| `Tab` / `Shift+Tab`, `1`–`9`    | Switch to the next / previous / nth command  |
+| Click on a sidebar entry        | Switch to that command                       |
+| `r`                             | Restart the current command                  |
+| `c`                             | Clear the current command's output           |
+| `↑` / `↓`, `k` / `j`            | Scroll one line                              |
+| `PgUp` / `PgDn`, mouse wheel    | Scroll one page / three lines                |
+| Click / drag the scrollbar      | Jump to that part of the output              |
+| `g` / `G`                       | Scroll to the top / bottom                   |
+| `/`                             | Search the current command's output          |
+| `n` / `N`                       | Next / previous match                        |
+| `i`                             | Input mode: send keystrokes to the command   |
+| `q`, `Ctrl+C`                   | Quit                                         |
+
+Search ignores case and marks matches as you type. `Enter` keeps the search
+and jumps to the most recent match; `Esc` cancels it, or clears it afterwards.
 
 In input mode every key goes to the current command, including `Ctrl+C`.
 `Esc` returns to normal mode. To send `Esc` itself to the command, press
