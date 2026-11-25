@@ -31,6 +31,7 @@ pub struct Pane {
     started: Instant,
     /// Lines that have scrolled off the top of the screen.
     history: usize,
+    unseen: bool,
 }
 
 impl Pane {
@@ -54,6 +55,10 @@ impl Pane {
 
     pub fn history(&self) -> usize {
         self.history
+    }
+
+    pub fn has_unseen_output(&self) -> bool {
+        self.unseen
     }
 
     /// The command's terminal screen, at the current scroll position.
@@ -81,6 +86,7 @@ impl Pane {
             id,
             started: Instant::now(),
             history: 0,
+            unseen: false,
         })
     }
 
@@ -91,6 +97,7 @@ impl Pane {
         self.parser = new_parser(size);
         self.started = Instant::now();
         self.history = 0;
+        self.unseen = false;
         match Proc::spawn(self.id, &self.command, size, tx.clone()) {
             Ok(proc) => {
                 self.proc = proc;
@@ -120,6 +127,7 @@ impl Pane {
     pub fn process(&mut self, bytes: &[u8]) {
         self.parser.process(bytes);
         self.measure_history();
+        self.unseen |= self.screen().scrollback() > 0;
     }
 
     pub fn set_exited(&mut self, code: u32) {
@@ -134,7 +142,9 @@ impl Pane {
 
     /// Scrolls to `offset` lines above the live screen, or as far as there is output.
     pub fn scroll_to(&mut self, offset: usize) {
-        self.parser.screen_mut().set_scrollback(offset);
+        let screen = self.parser.screen_mut();
+        screen.set_scrollback(offset);
+        self.unseen &= screen.scrollback() > 0;
     }
 
     pub fn scroll_to_bottom(&mut self) {

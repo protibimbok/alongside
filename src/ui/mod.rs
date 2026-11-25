@@ -283,6 +283,9 @@ fn hints(keys: &[(&'static str, &'static str)], theme: &Theme) -> Vec<Span<'stat
 fn status(app: &App, theme: &Theme) -> Line<'static> {
     let pane = app.active_pane();
     let mut spans = Vec::new();
+    if pane.has_unseen_output() {
+        spans.push(Span::styled("↓ new output ", theme.warn));
+    }
     let scrollback = pane.screen().scrollback();
     if scrollback > 0 {
         spans.push(Span::styled(format!("↑{scrollback} "), theme.warn));
