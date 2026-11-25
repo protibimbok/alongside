@@ -1,3 +1,8 @@
+use ratatui::layout::Rect;
+
+use crate::size::PaneSize;
+
+use super::layout::{MAX_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH};
 use super::*;
 
 fn areas(width: u16, height: u16) -> Areas {
@@ -68,4 +73,35 @@ fn sidebar_entries_are_found_by_position() {
     assert_eq!(areas.sidebar_entry(1, 1), None);
     assert_eq!(areas.sidebar_entry(12, 2), None);
     assert_eq!(self::areas(40, 24).sidebar_entry(1, 2), None);
+}
+
+#[test]
+fn thumb_spans_the_share_of_output_on_screen() {
+    assert_eq!(Thumb::new(10, 0, 0), None);
+    assert_eq!(Thumb::new(0, 5, 0), None);
+    assert_eq!(Thumb::new(10, 10, 10), Some(Thumb { top: 5, len: 5 }));
+    assert_eq!(Thumb::new(10, 10, 0), Some(Thumb { top: 0, len: 5 }));
+    assert_eq!(
+        Thumb::new(10, 10_000, 5_000),
+        Some(Thumb { top: 4, len: 1 })
+    );
+}
+
+#[test]
+fn dragging_the_thumb_to_a_row_draws_it_on_that_row() {
+    for (height, history) in [(1, 3), (10, 1), (10, 10), (18, 37), (40, 10_000)] {
+        let len = Thumb::new(height, history, 0).unwrap().len;
+        for top in 0..=height - len {
+            let line = Thumb { top, len }.top_line(height, history, top);
+            assert!(line <= history);
+            assert_eq!(Thumb::new(height, history, line).unwrap().top, top);
+        }
+    }
+}
+
+#[test]
+fn dragging_past_the_ends_reaches_the_first_and_last_line() {
+    let thumb = Thumb::new(10, 100, 50).unwrap();
+    assert_eq!(thumb.top_line(10, 100, 0), 0);
+    assert_eq!(thumb.top_line(10, 100, 99), 100);
 }

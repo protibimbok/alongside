@@ -6,10 +6,10 @@ use anyhow::Result;
 use crossterm::event::{
     Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind,
 };
-use ratatui::layout::Rect;
+use ratatui::layout::{Position, Rect};
 
 use crate::pane::{self, Pane, Status};
-use crate::ui::{self, Areas};
+use crate::ui::{self, Areas, Thumb};
 
 /// Lines scrolled per mouse wheel step.
 const WHEEL_LINES: isize = 3;
@@ -45,6 +45,8 @@ pub struct App {
     active: usize,
     quit: bool,
     mode: Mode,
+    /// While the scrollbar is dragged: the row of the thumb that is held.
+    drag: Option<usize>,
     areas: Areas,
     sidebar_width: u16,
     title: Option<String>,
@@ -83,6 +85,7 @@ impl App {
             active: 0,
             quit: false,
             mode: Mode::Normal,
+            drag: None,
             areas,
             sidebar_width,
             title,
@@ -152,6 +155,19 @@ impl App {
             Msg::Input(Event::Mouse(mouse)) => match mouse.kind {
                 MouseEventKind::ScrollUp => self.scroll(WHEEL_LINES),
                 MouseEventKind::ScrollDown => self.scroll(-WHEEL_LINES),
+                MouseEventKind::Down(MouseButton::Left)
+                    if self
+                        .areas
+                        .scrollbar
+                        .contains(Position::new(mouse.column, mouse.row)) =>
+                {
+                    self.grab_scrollbar(mouse.row)
+                }
+                MouseEventKind::Drag(MouseButton::Left) => self.drag_scrollbar(mouse.row),
+                MouseEventKind::Up(MouseButton::Left) => {
+                    self.drag = None;
+                    false
+                }
                 MouseEventKind::Down(MouseButton::Left) => {
                     match self.areas.sidebar_entry(mouse.column, mouse.row) {
                         Some(i) if i < self.panes.len() => self.active = i,
@@ -229,6 +245,40 @@ impl App {
 
     fn scroll(&mut self, lines: isize) -> bool {
         self.panes[self.active].scroll(lines)
+    }
+
+    /// Starts a drag. Pressing the track brings the middle of the thumb there;
+    /// pressing the thumb holds it where it is.
+    fn grab_scrollbar(&mut self, row: u16) -> bool {
+        let pane = &self.panes[self.active];
+        let track = self.areas.scrollbar;
+        let Some(thumb) = Thumb::new(track.height.into(), pane.history(), pane.top_line()) else {
+            return false;
+        };
+        let at = usize::from(row - track.y);
+        if (thumb.top..thumb.top + thumb.len).contains(&at) {
+            self.drag = Some(at - thumb.top);
+            return false;
+        }
+        self.drag = Some(thumb.len / 2);
+        self.drag_scrollbar(row)
+    }
+
+    fn drag_scrollbar(&mut self, row: u16) -> bool {
+        let Some(held) = self.drag else {
+            return false;
+        };
+        let pane = &mut self.panes[self.active];
+        let track = self.areas.scrollbar;
+        let height = usize::from(track.height);
+        let history = pane.history();
+        let Some(thumb) = Thumb::new(height, history, pane.top_line()) else {
+            return false;
+        };
+        let top = usize::from(row.saturating_sub(track.y)).saturating_sub(held);
+        let before = pane.screen().scrollback();
+        pane.scroll_to(history - thumb.top_line(height, history, top));
+        pane.screen().scrollback() != before
     }
 
     fn is_current(&self, id: Id) -> bool {
