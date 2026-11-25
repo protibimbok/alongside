@@ -58,3 +58,14 @@ fn pane_size_never_reaches_zero() {
     assert_eq!(areas(0, 0).pane_size(), PaneSize { rows: 1, cols: 1 });
     assert_eq!(areas(1, 1).pane_size(), PaneSize { rows: 1, cols: 1 });
 }
+
+#[test]
+fn sidebar_entries_are_found_by_position() {
+    let areas = areas(80, 24);
+    assert_eq!(areas.sidebar_entry(1, 2), Some(0));
+    assert_eq!(areas.sidebar_entry(10, 4), Some(2));
+    assert_eq!(areas.sidebar_entry(0, 2), None);
+    assert_eq!(areas.sidebar_entry(1, 1), None);
+    assert_eq!(areas.sidebar_entry(12, 2), None);
+    assert_eq!(self::areas(40, 24).sidebar_entry(1, 2), None);
+}

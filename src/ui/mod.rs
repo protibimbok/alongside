@@ -2,7 +2,7 @@ mod theme;
 
 use ratatui::Frame;
 use ratatui::buffer::Buffer;
-use ratatui::layout::{Constraint, Layout, Rect};
+use ratatui::layout::{Constraint, Layout, Position, Rect};
 use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Paragraph};
@@ -84,6 +84,13 @@ impl Areas {
             rows: self.pane.height.max(1),
             cols: self.pane.width.max(1),
         }
+    }
+
+    pub fn sidebar_entry(&self, column: u16, row: u16) -> Option<usize> {
+        let inner = Block::bordered().inner(self.sidebar);
+        inner
+            .contains(Position::new(column, row))
+            .then(|| usize::from(row - inner.y))
     }
 }
 

@@ -3,7 +3,9 @@
 use std::sync::mpsc::Sender;
 
 use anyhow::Result;
-use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseEventKind};
+use crossterm::event::{
+    Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind,
+};
 use ratatui::layout::Rect;
 
 use crate::pane::{self, Pane, Status};
@@ -150,6 +152,13 @@ impl App {
             Msg::Input(Event::Mouse(mouse)) => match mouse.kind {
                 MouseEventKind::ScrollUp => self.scroll(WHEEL_LINES),
                 MouseEventKind::ScrollDown => self.scroll(-WHEEL_LINES),
+                MouseEventKind::Down(MouseButton::Left) => {
+                    match self.areas.sidebar_entry(mouse.column, mouse.row) {
+                        Some(i) if i < self.panes.len() => self.active = i,
+                        _ => return false,
+                    }
+                    true
+                }
                 _ => false,
             },
             Msg::Input(Event::Resize(cols, rows)) => {
