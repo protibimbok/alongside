@@ -257,6 +257,7 @@ fn footer(app: &App, theme: &Theme) -> Vec<Span<'static>> {
         Mode::Normal => hints(
             &[
                 ("tab", "switch"),
+                ("↑/↓", "scroll"),
                 ("r", "restart"),
                 ("i", "input"),
                 ("q", "quit"),

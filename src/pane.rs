@@ -126,15 +126,19 @@ impl Pane {
         self.status = Status::Exited(code);
     }
 
-    pub fn scroll(&mut self, lines: i16) -> bool {
-        let screen = self.parser.screen_mut();
-        let before = screen.scrollback();
-        screen.set_scrollback(before.saturating_add_signed(isize::from(lines)));
-        screen.scrollback() != before
+    pub fn scroll(&mut self, lines: isize) -> bool {
+        let before = self.screen().scrollback();
+        self.scroll_to(before.saturating_add_signed(lines));
+        self.screen().scrollback() != before
+    }
+
+    /// Scrolls to `offset` lines above the live screen, or as far as there is output.
+    pub fn scroll_to(&mut self, offset: usize) {
+        self.parser.screen_mut().set_scrollback(offset);
     }
 
     pub fn scroll_to_bottom(&mut self) {
-        self.parser.screen_mut().set_scrollback(0);
+        self.scroll_to(0);
     }
 
     pub fn top_line(&self) -> usize {

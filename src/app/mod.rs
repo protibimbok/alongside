@@ -10,7 +10,7 @@ use crate::pane::{self, Pane, Status};
 use crate::ui::{self, Areas};
 
 /// Lines scrolled per mouse wheel step.
-const WHEEL_LINES: i16 = 3;
+const WHEEL_LINES: isize = 3;
 const MAX_NAME: usize = 20;
 
 /// Identifies one run of a command: its pane, and how often it was restarted.
@@ -166,14 +166,18 @@ impl App {
             return self.on_input_key(key);
         }
         let count = self.panes.len();
-        let page = i16::try_from(self.areas.pane_size().rows).unwrap_or(i16::MAX);
+        let page = isize::try_from(self.areas.pane_size().rows).unwrap_or(isize::MAX);
         match key.code {
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => self.quit = true,
             KeyCode::Char('q') => self.quit = true,
             KeyCode::Char('r') => self.restart(),
             KeyCode::Char('i') => self.mode = Mode::Input,
+            KeyCode::Up | KeyCode::Char('k') => return self.scroll(1),
+            KeyCode::Down | KeyCode::Char('j') => return self.scroll(-1),
             KeyCode::PageUp => return self.scroll(page),
             KeyCode::PageDown => return self.scroll(-page),
+            KeyCode::Char('g') => self.panes[self.active].scroll_to(usize::MAX),
+            KeyCode::Char('G') => self.panes[self.active].scroll_to_bottom(),
             KeyCode::Tab => self.active = (self.active + 1) % count,
             KeyCode::BackTab => self.active = (self.active + count - 1) % count,
             KeyCode::Char(c @ '1'..='9') => {
@@ -213,7 +217,7 @@ impl App {
         true
     }
 
-    fn scroll(&mut self, lines: i16) -> bool {
+    fn scroll(&mut self, lines: isize) -> bool {
         self.panes[self.active].scroll(lines)
     }
 
