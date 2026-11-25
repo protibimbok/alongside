@@ -14,6 +14,9 @@ use crate::size::PaneSize;
 
 pub use theme::Theme;
 
+const SPINNER: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+pub const SPINNER_FRAME: std::time::Duration = std::time::Duration::from_millis(80);
+
 const MIN_SIDEBAR_WIDTH: u16 = 12;
 const MAX_SIDEBAR_WIDTH: u16 = 26;
 const MIN_FULL_PANE_COLS: u16 = 30;
@@ -167,10 +170,18 @@ fn draw_sidebar(frame: &mut Frame, area: Rect, app: &App, theme: &Theme) {
         } else {
             " ".to_string()
         };
-        let (mark, mark_color, name_color) = match pane.status() {
-            Status::Exited(0) => ("✓".to_string(), theme.ok, color),
-            Status::Exited(_) => ("✕".to_string(), theme.error, theme.error),
-            Status::Running => (number, theme.muted, color),
+        let (mark, mark_color, name_color) = match (pane.status(), pane.starting()) {
+            (Status::Exited(0), _) => ("✓".to_string(), theme.ok, color),
+            (Status::Exited(_), _) => ("✕".to_string(), theme.error, theme.error),
+            (Status::Running, Some(uptime)) => {
+                let frame = uptime.as_millis() / SPINNER_FRAME.as_millis();
+                (
+                    SPINNER[frame as usize % SPINNER.len()].to_string(),
+                    color,
+                    color,
+                )
+            }
+            (Status::Running, None) => (number, theme.muted, color),
         };
         if selected {
             // The entry is filled with the command's color, so everything

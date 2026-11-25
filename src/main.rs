@@ -89,18 +89,26 @@ fn run(
         }
 
         // Block until something happens; if a redraw is pending, only until
-        // the next frame is due.
-        let msg = if dirty {
-            match rx.recv_timeout(wait.max(Duration::from_millis(1))) {
-                Ok(msg) => msg,
-                Err(RecvTimeoutError::Timeout) => continue,
-                Err(RecvTimeoutError::Disconnected) => break,
-            }
+        // the next frame is due, and while a spinner is turning, only until
+        // its next step.
+        let timeout = if dirty {
+            Some(wait.max(Duration::from_millis(1)))
         } else {
-            match rx.recv() {
+            app.animating().then_some(ui::SPINNER_FRAME)
+        };
+        let msg = match timeout {
+            Some(timeout) => match rx.recv_timeout(timeout) {
+                Ok(msg) => msg,
+                Err(RecvTimeoutError::Timeout) => {
+                    dirty = true;
+                    continue;
+                }
+                Err(RecvTimeoutError::Disconnected) => break,
+            },
+            None => match rx.recv() {
                 Ok(msg) => msg,
                 Err(_) => break,
-            }
+            },
         };
         dirty |= app.handle(msg);
         // Drain whatever else is queued so bursts of output cost one redraw.

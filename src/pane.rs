@@ -1,6 +1,7 @@
 //! One command and the terminal screen it draws on.
 
 use std::sync::mpsc::Sender;
+use std::time::{Duration, Instant};
 
 use anyhow::Result;
 
@@ -10,6 +11,8 @@ use crate::size::PaneSize;
 
 /// Lines of scrollback kept per command.
 const SCROLLBACK: usize = 10_000;
+
+const STARTUP: Duration = Duration::from_secs(2);
 
 #[derive(Clone, Copy)]
 pub enum Status {
@@ -25,6 +28,7 @@ pub struct Pane {
     proc: Proc,
     /// The run this pane is showing; bumped on every restart.
     id: Id,
+    started: Instant,
     /// Lines that have scrolled off the top of the screen.
     history: usize,
 }
@@ -40,6 +44,12 @@ impl Pane {
 
     pub fn status(&self) -> Status {
         self.status
+    }
+
+    /// Time since the command was spawned, while it is still starting up.
+    pub fn starting(&self) -> Option<Duration> {
+        let uptime = self.started.elapsed();
+        (matches!(self.status, Status::Running) && uptime < STARTUP).then_some(uptime)
     }
 
     pub fn history(&self) -> usize {
@@ -69,6 +79,7 @@ impl Pane {
             proc: Proc::spawn(id, &command, size, tx.clone())?,
             command,
             id,
+            started: Instant::now(),
             history: 0,
         })
     }
@@ -78,6 +89,7 @@ impl Pane {
         process::stop_all([&mut self.proc]);
         self.id.run += 1;
         self.parser = new_parser(size);
+        self.started = Instant::now();
         self.history = 0;
         match Proc::spawn(self.id, &self.command, size, tx.clone()) {
             Ok(proc) => {

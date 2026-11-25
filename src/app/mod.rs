@@ -121,6 +121,10 @@ impl App {
         self.quit
     }
 
+    pub fn animating(&self) -> bool {
+        self.panes.iter().any(|pane| pane.starting().is_some())
+    }
+
     /// Applies a message and returns whether the screen needs a redraw.
     pub fn handle(&mut self, msg: Msg) -> bool {
         match msg {
