@@ -20,6 +20,7 @@ use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 
 use app::{App, Msg};
+use ui::Theme;
 
 #[derive(Parser)]
 #[command(version, about)]
@@ -27,6 +28,10 @@ struct Cli {
     /// Tab labels, comma-separated and in command order [default: the command text]
     #[arg(short, long, value_delimiter = ',', value_name = "NAME")]
     names: Vec<String>,
+
+    /// Adds a top row showing this text and the working directory
+    #[arg(short, long)]
+    title: Option<String>,
 
     /// Commands to run, each one quoted as a single argument
     #[arg(required = true, value_name = "COMMAND")]
@@ -42,11 +47,11 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     let (tx, rx) = mpsc::channel();
 
-    let (cols, rows) = crossterm::terminal::size()?;
     let mut app = App::new(
         &cli.commands,
         &cli.names,
-        ui::pane_size(cols, rows),
+        cli.title,
+        crossterm::terminal::size()?,
         tx.clone(),
     )?;
 
@@ -72,12 +77,13 @@ fn run(
         }
     });
 
+    let theme = Theme::detect();
     let mut dirty = true;
     let mut last_draw: Option<Instant> = None;
     while !app.should_quit() {
         let wait = last_draw.map_or(Duration::ZERO, |t| FRAME.saturating_sub(t.elapsed()));
         if dirty && wait.is_zero() {
-            terminal.draw(|frame| ui::draw(frame, app))?;
+            terminal.draw(|frame| ui::draw(frame, app, theme))?;
             last_draw = Some(Instant::now());
             dirty = false;
         }

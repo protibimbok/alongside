@@ -4,10 +4,10 @@ use std::sync::mpsc::Sender;
 
 use anyhow::Result;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseEventKind};
+use ratatui::layout::Rect;
 
 use crate::pane::{self, Pane, Status};
-use crate::size::PaneSize;
-use crate::ui;
+use crate::ui::{self, Areas};
 
 /// Lines scrolled per mouse wheel step.
 const WHEEL_LINES: i16 = 3;
@@ -43,7 +43,10 @@ pub struct App {
     active: usize,
     quit: bool,
     mode: Mode,
-    size: PaneSize,
+    areas: Areas,
+    sidebar_width: u16,
+    title: Option<String>,
+    cwd: String,
     tx: Sender<Msg>,
 }
 
@@ -51,18 +54,26 @@ impl App {
     pub fn new(
         commands: &[String],
         names: &[String],
-        size: PaneSize,
+        title: Option<String>,
+        (cols, rows): (u16, u16),
         tx: Sender<Msg>,
     ) -> Result<Self> {
-        let panes = commands
+        let names: Vec<String> = commands
             .iter()
             .enumerate()
-            .map(|(i, command)| {
-                let name = match names.get(i).map(|n| n.trim()) {
-                    Some(name) if !name.is_empty() => name.to_string(),
-                    _ => truncate(command, MAX_NAME),
-                };
-                Pane::spawn(i, name, command.clone(), size, &tx)
+            .map(|(i, command)| match names.get(i).map(|n| n.trim()) {
+                Some(name) if !name.is_empty() => truncate(name, MAX_NAME),
+                _ => truncate(command, MAX_NAME),
+            })
+            .collect();
+        let sidebar_width = ui::sidebar_width(names.iter().map(String::as_str));
+        let areas = Areas::new(Rect::new(0, 0, cols, rows), sidebar_width, title.is_some());
+        let panes = names
+            .into_iter()
+            .zip(commands)
+            .enumerate()
+            .map(|(i, (name, command))| {
+                Pane::spawn(i, name, command.clone(), areas.pane_size(), &tx)
             })
             .collect::<Result<_>>()?;
         Ok(Self {
@@ -70,7 +81,10 @@ impl App {
             active: 0,
             quit: false,
             mode: Mode::Normal,
-            size,
+            areas,
+            sidebar_width,
+            title,
+            cwd: working_dir(),
             tx,
         })
     }
@@ -89,6 +103,18 @@ impl App {
 
     pub fn mode(&self) -> Mode {
         self.mode
+    }
+
+    pub fn sidebar_width(&self) -> u16 {
+        self.sidebar_width
+    }
+
+    pub fn title(&self) -> Option<&str> {
+        self.title.as_deref()
+    }
+
+    pub fn cwd(&self) -> &str {
+        &self.cwd
     }
 
     pub fn should_quit(&self) -> bool {
@@ -123,7 +149,7 @@ impl App {
                 _ => false,
             },
             Msg::Input(Event::Resize(cols, rows)) => {
-                self.resize(ui::pane_size(cols, rows));
+                self.resize(cols, rows);
                 true
             }
             // Unhandled input, and events from an earlier run of a restarted command.
@@ -136,7 +162,7 @@ impl App {
             return self.on_input_key(key);
         }
         let count = self.panes.len();
-        let page = i16::try_from(self.size.rows).unwrap_or(i16::MAX);
+        let page = i16::try_from(self.areas.pane_size().rows).unwrap_or(i16::MAX);
         match key.code {
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => self.quit = true,
             KeyCode::Char('q') => self.quit = true,
@@ -192,13 +218,17 @@ impl App {
     }
 
     fn restart(&mut self) {
-        self.panes[self.active].restart(self.size, &self.tx);
+        self.panes[self.active].restart(self.areas.pane_size(), &self.tx);
     }
 
-    fn resize(&mut self, size: PaneSize) {
-        self.size = size;
+    fn resize(&mut self, cols: u16, rows: u16) {
+        self.areas = Areas::new(
+            Rect::new(0, 0, cols, rows),
+            self.sidebar_width,
+            self.title.is_some(),
+        );
         for pane in &mut self.panes {
-            pane.resize(size);
+            pane.resize(self.areas.pane_size());
         }
     }
 }
@@ -208,6 +238,18 @@ impl App {
 impl Drop for App {
     fn drop(&mut self) {
         pane::stop_all(&mut self.panes);
+    }
+}
+
+fn working_dir() -> String {
+    let Ok(dir) = std::env::current_dir() else {
+        return String::new();
+    };
+    let home = std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" });
+    match home.map(|home| dir.strip_prefix(home).map(std::path::Path::to_path_buf)) {
+        Some(Ok(rest)) if rest.as_os_str().is_empty() => "~".to_string(),
+        Some(Ok(rest)) => std::path::Path::new("~").join(rest).display().to_string(),
+        _ => dir.display().to_string(),
     }
 }
 

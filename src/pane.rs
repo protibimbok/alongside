@@ -25,6 +25,8 @@ pub struct Pane {
     proc: Proc,
     /// The run this pane is showing; bumped on every restart.
     id: Id,
+    /// Lines that have scrolled off the top of the screen.
+    history: usize,
 }
 
 impl Pane {
@@ -32,8 +34,16 @@ impl Pane {
         &self.name
     }
 
+    pub fn command(&self) -> &str {
+        &self.command
+    }
+
     pub fn status(&self) -> Status {
         self.status
+    }
+
+    pub fn history(&self) -> usize {
+        self.history
     }
 
     /// The command's terminal screen, at the current scroll position.
@@ -59,6 +69,7 @@ impl Pane {
             proc: Proc::spawn(id, &command, size, tx.clone())?,
             command,
             id,
+            history: 0,
         })
     }
 
@@ -67,6 +78,7 @@ impl Pane {
         process::stop_all([&mut self.proc]);
         self.id.run += 1;
         self.parser = new_parser(size);
+        self.history = 0;
         match Proc::spawn(self.id, &self.command, size, tx.clone()) {
             Ok(proc) => {
                 self.proc = proc;
@@ -83,6 +95,7 @@ impl Pane {
     pub fn resize(&mut self, size: PaneSize) {
         self.parser.screen_mut().set_size(size.rows, size.cols);
         self.proc.resize(size);
+        self.measure_history();
     }
 
     /// Whether `id` is the run this pane is showing, rather than an earlier
@@ -94,6 +107,7 @@ impl Pane {
     /// Draws the command's output on its screen.
     pub fn process(&mut self, bytes: &[u8]) {
         self.parser.process(bytes);
+        self.measure_history();
     }
 
     pub fn set_exited(&mut self, code: u32) {
@@ -109,6 +123,20 @@ impl Pane {
 
     pub fn scroll_to_bottom(&mut self) {
         self.parser.screen_mut().set_scrollback(0);
+    }
+
+    pub fn top_line(&self) -> usize {
+        self.history.saturating_sub(self.screen().scrollback())
+    }
+
+    /// vt100 doesn't expose how much scrollback it holds, but it does clamp
+    /// the scroll position to it.
+    fn measure_history(&mut self) {
+        let screen = self.parser.screen_mut();
+        let at = screen.scrollback();
+        screen.set_scrollback(usize::MAX);
+        self.history = screen.scrollback();
+        screen.set_scrollback(at);
     }
 
     /// Sends bytes to the command, as if they were typed.
