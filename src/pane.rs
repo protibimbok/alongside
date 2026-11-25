@@ -162,8 +162,36 @@ impl Pane {
         self.scroll_to(0);
     }
 
+    /// Scrolls so that `line`, counted from the top of the output, is in the
+    /// middle of the pane.
+    pub fn show_line(&mut self, line: usize) {
+        let half = usize::from(self.screen().size().0 / 2);
+        self.scroll_to((self.history + half).saturating_sub(line));
+    }
+
     pub fn top_line(&self) -> usize {
         self.history.saturating_sub(self.screen().scrollback())
+    }
+
+    /// All of the output as text, scrollback included, from the top.
+    pub fn lines(&mut self) -> Vec<String> {
+        let (rows, cols) = self.screen().size();
+        let at = self.screen().scrollback();
+        let mut lines = Vec::with_capacity(self.history + usize::from(rows));
+        let mut offset = self.history;
+        loop {
+            self.parser.screen_mut().set_scrollback(offset);
+            // The last page overlaps the one before it unless the history
+            // is a whole number of pages.
+            let seen = lines.len() - (self.history - offset);
+            lines.extend(self.screen().rows(0, cols).skip(seen));
+            if offset == 0 {
+                break;
+            }
+            offset = offset.saturating_sub(usize::from(rows));
+        }
+        self.parser.screen_mut().set_scrollback(at);
+        lines
     }
 
     /// vt100 doesn't expose how much scrollback it holds, but it does clamp

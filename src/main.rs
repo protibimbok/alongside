@@ -1,6 +1,7 @@
 mod app;
 mod pane;
 mod process;
+mod search;
 mod size;
 mod ui;
 

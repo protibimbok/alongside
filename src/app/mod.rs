@@ -9,6 +9,7 @@ use crossterm::event::{
 use ratatui::layout::{Position, Rect};
 
 use crate::pane::{self, Pane, Status};
+use crate::search::Search;
 use crate::ui::{self, Areas, Thumb};
 
 /// Lines scrolled per mouse wheel step.
@@ -38,6 +39,8 @@ pub enum Mode {
     Input,
     /// `Ctrl+A` was pressed in input mode; the next key is sent literally.
     InputLiteral,
+    /// Keys edit the search query.
+    Search,
 }
 
 pub struct App {
@@ -47,6 +50,7 @@ pub struct App {
     mode: Mode,
     /// While the scrollbar is dragged: the row of the thumb that is held.
     drag: Option<usize>,
+    search: Search,
     areas: Areas,
     sidebar_width: u16,
     title: Option<String>,
@@ -86,6 +90,7 @@ impl App {
             quit: false,
             mode: Mode::Normal,
             drag: None,
+            search: Search::default(),
             areas,
             sidebar_width,
             title,
@@ -108,6 +113,10 @@ impl App {
 
     pub fn mode(&self) -> Mode {
         self.mode
+    }
+
+    pub fn search(&self) -> &Search {
+        &self.search
     }
 
     pub fn sidebar_width(&self) -> u16 {
@@ -170,7 +179,7 @@ impl App {
                 }
                 MouseEventKind::Down(MouseButton::Left) => {
                     match self.areas.sidebar_entry(mouse.column, mouse.row) {
-                        Some(i) if i < self.panes.len() => self.active = i,
+                        Some(i) if i < self.panes.len() => self.select(i),
                         _ => return false,
                     }
                     true
@@ -187,8 +196,10 @@ impl App {
     }
 
     fn on_key(&mut self, key: KeyEvent) -> bool {
-        if self.mode != Mode::Normal {
-            return self.on_input_key(key);
+        match self.mode {
+            Mode::Normal => {}
+            Mode::Search => return self.on_search_key(key),
+            Mode::Input | Mode::InputLiteral => return self.on_input_key(key),
         }
         let count = self.panes.len();
         let page = isize::try_from(self.areas.pane_size().rows).unwrap_or(isize::MAX);
@@ -197,24 +208,83 @@ impl App {
             KeyCode::Char('q') => self.quit = true,
             KeyCode::Char('r') => self.restart(),
             KeyCode::Char('i') => self.mode = Mode::Input,
-            KeyCode::Char('c') => self.panes[self.active].clear(),
+            KeyCode::Char('c') => {
+                self.panes[self.active].clear();
+                self.find();
+            }
+            KeyCode::Char('/') => {
+                self.search.clear();
+                self.mode = Mode::Search;
+            }
+            KeyCode::Char('n') if self.search.is_active() => self.step_match(true),
+            KeyCode::Char('N') if self.search.is_active() => self.step_match(false),
+            KeyCode::Esc if self.search.is_active() => self.search.clear(),
             KeyCode::Up | KeyCode::Char('k') => return self.scroll(1),
             KeyCode::Down | KeyCode::Char('j') => return self.scroll(-1),
             KeyCode::PageUp => return self.scroll(page),
             KeyCode::PageDown => return self.scroll(-page),
             KeyCode::Char('g') => self.panes[self.active].scroll_to(usize::MAX),
             KeyCode::Char('G') => self.panes[self.active].scroll_to_bottom(),
-            KeyCode::Tab => self.active = (self.active + 1) % count,
-            KeyCode::BackTab => self.active = (self.active + count - 1) % count,
+            KeyCode::Tab => self.select((self.active + 1) % count),
+            KeyCode::BackTab => self.select((self.active + count - 1) % count),
             KeyCode::Char(c @ '1'..='9') => {
                 let i = c as usize - '1' as usize;
                 if i < count {
-                    self.active = i;
+                    self.select(i);
                 }
             }
             _ => return false,
         }
         true
+    }
+
+    /// Search mode: typing edits the query and marks its matches as it
+    /// changes. `Enter` keeps the search and jumps to the most recent match,
+    /// `Esc` drops it.
+    fn on_search_key(&mut self, key: KeyEvent) -> bool {
+        match key.code {
+            KeyCode::Esc => {
+                self.search.clear();
+                self.mode = Mode::Normal;
+            }
+            KeyCode::Enter => {
+                self.mode = Mode::Normal;
+                self.find();
+                if let Some(line) = self.search.select_last() {
+                    self.panes[self.active].show_line(line);
+                }
+            }
+            KeyCode::Backspace => {
+                self.search.pop();
+                self.find();
+            }
+            KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.search.push(c);
+                self.find();
+            }
+            _ => return false,
+        }
+        true
+    }
+
+    /// Looks the search up again in the active pane, whose output may have
+    /// changed since.
+    fn find(&mut self) {
+        if self.search.is_active() {
+            self.search.update(&self.panes[self.active].lines());
+        }
+    }
+
+    fn step_match(&mut self, forward: bool) {
+        self.find();
+        if let Some(line) = self.search.step(forward) {
+            self.panes[self.active].show_line(line);
+        }
+    }
+
+    fn select(&mut self, pane: usize) {
+        self.active = pane;
+        self.find();
     }
 
     /// Input mode: `Esc` leaves it, `Ctrl+A` then `Esc` sends a literal `Esc`
@@ -287,6 +357,7 @@ impl App {
 
     fn restart(&mut self) {
         self.panes[self.active].restart(self.areas.pane_size(), &self.tx);
+        self.find();
     }
 
     fn resize(&mut self, cols: u16, rows: u16) {
@@ -298,6 +369,7 @@ impl App {
         for pane in &mut self.panes {
             pane.resize(self.areas.pane_size());
         }
+        self.find();
     }
 }
 

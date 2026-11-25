@@ -1,4 +1,5 @@
 mod footer;
+mod highlight;
 mod layout;
 mod scrollbar;
 mod sidebar;
@@ -15,6 +16,7 @@ use crate::app::{App, Mode};
 use crate::pane::Status;
 
 use footer::{footer, status};
+use highlight::highlight;
 use scrollbar::draw_scrollbar;
 use sidebar::draw_sidebar;
 
@@ -41,6 +43,14 @@ pub fn draw(frame: &mut Frame, app: &App, theme: &Theme) {
         && !screen.hide_cursor();
     let terminal = PseudoTerminal::new(screen).cursor(Cursor::default().visibility(show_cursor));
     frame.render_widget(terminal, areas.pane);
+    if app.search().is_active() {
+        highlight(
+            frame.buffer_mut(),
+            areas.pane,
+            app.search(),
+            pane.top_line(),
+        );
+    }
     draw_scrollbar(frame.buffer_mut(), areas.scrollbar, pane, theme);
 
     let mut left = Vec::new();
@@ -95,7 +105,7 @@ fn draw_content_box(frame: &mut Frame, area: Rect, app: &App, theme: &Theme) {
     let pane = app.active_pane();
     let border = match app.mode() {
         Mode::Input | Mode::InputLiteral => theme.input,
-        Mode::Normal => theme.accent,
+        Mode::Normal | Mode::Search => theme.accent,
     };
     let block = Block::bordered()
         .border_type(BorderType::Rounded)
