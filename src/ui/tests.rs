@@ -50,12 +50,28 @@ fn small_terminals_get_the_compact_layout() {
         assert_eq!(
             areas.pane_size(),
             PaneSize {
-                rows: height - 1,
+                rows: height - 2,
                 cols: width - 1
             }
         );
+        assert_eq!(areas.command, Rect::new(0, 0, width, 1));
+        assert_eq!(areas.pane.y, 1);
     }
     assert!(!areas(47, 10).compact);
+}
+
+#[test]
+fn help_fills_a_compact_screen_and_floats_on_a_full_one() {
+    assert_eq!(areas(40, 24).help, Rect::new(1, 0, 38, 23));
+    assert_eq!(areas(40, 24).max_help_scroll(), 0);
+    assert_eq!(areas(80, 9).max_help_scroll(), 6);
+
+    let (width, height) = help::size();
+    let full = areas(80, 40);
+    assert_eq!((full.help.width, full.help.height), (width, height));
+    assert_eq!(full.help.x, (80 - width) / 2);
+    assert_eq!(full.max_help_scroll(), 0);
+    assert_eq!(areas(47, 10).help.height, 7);
 }
 
 #[test]

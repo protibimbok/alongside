@@ -108,7 +108,8 @@ restart them or quit.
 A scrollbar appears once a command has more output than fits, and the bottom
 line lists the keys that apply and tells you when new output arrived while you
 were scrolled up. On terminals too small for the sidebar, only the current
-command's output and the bottom line are shown.
+command's output is shown, under a row with its name and status, and the
+bottom line just points at the help (`h`).
 
 ## Keybindings
 
@@ -125,6 +126,7 @@ command's output and the bottom line are shown.
 | `/`                             | Search the current command's output          |
 | `n` / `N`                       | Next / previous match                        |
 | `i`                             | Input mode: send keystrokes to the command   |
+| `h`                             | Show / hide the list of keys                 |
 | `q`, `Ctrl+C`                   | Quit                                         |
 
 Search ignores case and marks matches as you type. `Enter` keeps the search

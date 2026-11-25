@@ -3,10 +3,12 @@ use ratatui::text::{Line, Span};
 
 use crate::app::{App, Mode};
 
-use super::Theme;
+use super::{Areas, Theme};
 
 /// Left side of the footer: the keys that do something right now, or the search.
-pub(super) fn footer<'a>(app: &'a App, theme: &Theme) -> Vec<Span<'a>> {
+/// The compact layout only points at the help instead of listing the keys.
+pub(super) fn footer<'a>(app: &'a App, theme: &Theme, areas: &Areas) -> Vec<Span<'a>> {
+    let compact = areas.compact;
     let search = app.search();
     let prompt = Style::new().fg(theme.warn).bold();
     match app.mode() {
@@ -28,6 +30,10 @@ pub(super) fn footer<'a>(app: &'a App, theme: &Theme) -> Vec<Span<'a>> {
         Mode::Input | Mode::InputLiteral => {
             hints(&[("esc", "normal mode"), ("^A esc", "send esc")], theme)
         }
+        Mode::Help if areas.max_help_scroll() > 0 => {
+            hints(&[("↑/↓", "scroll"), ("h", "close")], theme)
+        }
+        Mode::Help => hints(&[("h", "close")], theme),
         Mode::Normal if search.is_active() => {
             let (label, style) = if search.count() == 0 {
                 ("[no matches]".to_string(), Style::new().fg(theme.error))
@@ -41,20 +47,22 @@ pub(super) fn footer<'a>(app: &'a App, theme: &Theme) -> Vec<Span<'a>> {
                 Span::styled(label, style),
                 Span::styled(format!(" {}   ", search.query()), theme.muted),
             ];
-            spans.extend(hints(
-                &[("n", "next"), ("N", "prev"), ("esc", "clear")],
-                theme,
-            ));
+            spans.extend(if compact {
+                hints(&[("h", "help")], theme)
+            } else {
+                hints(&[("n", "next"), ("N", "prev"), ("esc", "clear")], theme)
+            });
             spans
         }
+        Mode::Normal if compact => hints(&[("h", "help")], theme),
         Mode::Normal => hints(
             &[
                 ("tab", "switch"),
                 ("↑/↓", "scroll"),
                 ("r", "restart"),
-                ("c", "clear"),
                 ("/", "search"),
                 ("i", "input"),
+                ("h", "help"),
                 ("q", "quit"),
             ],
             theme,
@@ -87,6 +95,7 @@ pub(super) fn status(app: &App, theme: &Theme) -> Line<'static> {
     }
     let (label, color) = match app.mode() {
         Mode::Normal => (" NORMAL ", theme.accent),
+        Mode::Help => (" HELP ", theme.accent),
         Mode::Search => (" SEARCH ", theme.warn),
         Mode::Input => (" INPUT ", theme.input),
         Mode::InputLiteral => (" INPUT ^A ", theme.input),

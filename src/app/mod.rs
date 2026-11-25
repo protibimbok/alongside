@@ -41,6 +41,8 @@ pub enum Mode {
     InputLiteral,
     /// Keys edit the search query.
     Search,
+    /// The list of keys is shown; keys scroll or close it.
+    Help,
 }
 
 pub struct App {
@@ -51,6 +53,7 @@ pub struct App {
     /// While the scrollbar is dragged: the row of the thumb that is held.
     drag: Option<usize>,
     search: Search,
+    help_scroll: u16,
     areas: Areas,
     sidebar_width: u16,
     title: Option<String>,
@@ -91,6 +94,7 @@ impl App {
             mode: Mode::Normal,
             drag: None,
             search: Search::default(),
+            help_scroll: 0,
             areas,
             sidebar_width,
             title,
@@ -117,6 +121,10 @@ impl App {
 
     pub fn search(&self) -> &Search {
         &self.search
+    }
+
+    pub fn help_scroll(&self) -> u16 {
+        self.help_scroll
     }
 
     pub fn sidebar_width(&self) -> u16 {
@@ -161,6 +169,11 @@ impl App {
             // a Release event after every Press. Handling it would run every
             // key twice; Repeat is kept so held keys keep repeating.
             Msg::Input(Event::Key(key)) if key.kind != KeyEventKind::Release => self.on_key(key),
+            Msg::Input(Event::Mouse(mouse)) if self.mode == Mode::Help => match mouse.kind {
+                MouseEventKind::ScrollUp => self.scroll_help(-WHEEL_LINES),
+                MouseEventKind::ScrollDown => self.scroll_help(WHEEL_LINES),
+                _ => false,
+            },
             Msg::Input(Event::Mouse(mouse)) => match mouse.kind {
                 MouseEventKind::ScrollUp => self.scroll(WHEEL_LINES),
                 MouseEventKind::ScrollDown => self.scroll(-WHEEL_LINES),
@@ -199,6 +212,7 @@ impl App {
         match self.mode {
             Mode::Normal => {}
             Mode::Search => return self.on_search_key(key),
+            Mode::Help => return self.on_help_key(key),
             Mode::Input | Mode::InputLiteral => return self.on_input_key(key),
         }
         let count = self.panes.len();
@@ -208,6 +222,10 @@ impl App {
             KeyCode::Char('q') => self.quit = true,
             KeyCode::Char('r') => self.restart(),
             KeyCode::Char('i') => self.mode = Mode::Input,
+            KeyCode::Char('h') => {
+                self.help_scroll = 0;
+                self.mode = Mode::Help;
+            }
             KeyCode::Char('c') => {
                 self.panes[self.active].clear();
                 self.find();
@@ -236,6 +254,29 @@ impl App {
             _ => return false,
         }
         true
+    }
+
+    fn on_help_key(&mut self, key: KeyEvent) -> bool {
+        let page = isize::try_from(self.areas.help.height).unwrap_or(isize::MAX);
+        match key.code {
+            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => self.quit = true,
+            KeyCode::Char('h' | 'q') | KeyCode::Esc => self.mode = Mode::Normal,
+            KeyCode::Up | KeyCode::Char('k') => return self.scroll_help(-1),
+            KeyCode::Down | KeyCode::Char('j') => return self.scroll_help(1),
+            KeyCode::PageUp => return self.scroll_help(-page),
+            KeyCode::PageDown => return self.scroll_help(page),
+            _ => return false,
+        }
+        true
+    }
+
+    fn scroll_help(&mut self, lines: isize) -> bool {
+        let before = self.help_scroll;
+        let to = usize::from(before).saturating_add_signed(lines);
+        self.help_scroll = u16::try_from(to)
+            .unwrap_or(u16::MAX)
+            .min(self.areas.max_help_scroll());
+        self.help_scroll != before
     }
 
     /// Search mode: typing edits the query and marks its matches as it
@@ -369,6 +410,7 @@ impl App {
         for pane in &mut self.panes {
             pane.resize(self.areas.pane_size());
         }
+        self.help_scroll = self.help_scroll.min(self.areas.max_help_scroll());
         self.find();
     }
 }

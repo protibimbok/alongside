@@ -1,4 +1,5 @@
 mod footer;
+mod help;
 mod highlight;
 mod layout;
 mod scrollbar;
@@ -16,6 +17,7 @@ use crate::app::{App, Mode};
 use crate::pane::Status;
 
 use footer::{footer, status};
+use help::draw_help;
 use highlight::highlight;
 use scrollbar::draw_scrollbar;
 use sidebar::draw_sidebar;
@@ -35,8 +37,9 @@ pub fn draw(frame: &mut Frame, app: &App, theme: &Theme) {
             draw_header(frame, areas.header, title, app.cwd(), theme);
         }
         draw_sidebar(frame, areas.sidebar, app, theme);
-        draw_content_box(frame, areas.content, app, theme);
+        draw_content_box(frame, &areas, app, theme);
     }
+    draw_command(frame, &areas, app, theme);
 
     let show_cursor = matches!(app.mode(), Mode::Input | Mode::InputLiteral)
         && screen.scrollback() == 0
@@ -53,20 +56,11 @@ pub fn draw(frame: &mut Frame, app: &App, theme: &Theme) {
     }
     draw_scrollbar(frame.buffer_mut(), areas.scrollbar, pane, theme);
 
-    let mut left = Vec::new();
-    if areas.compact {
-        left.push(Span::styled(
-            format!(
-                " {}/{} {} ",
-                app.active() + 1,
-                app.panes().len(),
-                pane.name()
-            ),
-            Style::new().fg(Color::Black).bg(theme.tab(app.active())),
-        ));
+    if app.mode() == Mode::Help {
+        draw_help(frame, &areas, app.help_scroll(), theme);
     }
-    left.extend(footer(app, theme));
-    split_row(frame, areas.footer, Line::from(left), status(app, theme));
+    let left = Line::from(footer(app, theme, &areas));
+    split_row(frame, areas.footer, left, status(app, theme));
 }
 
 fn draw_header(frame: &mut Frame, area: Rect, title: &str, cwd: &str, theme: &Theme) {
@@ -101,35 +95,51 @@ fn split_row(frame: &mut Frame, area: Rect, left: Line, right: Line) {
     frame.render_widget(right, right_area);
 }
 
-fn draw_content_box(frame: &mut Frame, area: Rect, app: &App, theme: &Theme) {
-    let pane = app.active_pane();
+fn draw_content_box(frame: &mut Frame, areas: &Areas, app: &App, theme: &Theme) {
     let border = match app.mode() {
         Mode::Input | Mode::InputLiteral => theme.input,
-        Mode::Normal | Mode::Search => theme.accent,
+        Mode::Normal | Mode::Search | Mode::Help => theme.accent,
     };
     let block = Block::bordered()
         .border_type(BorderType::Rounded)
         .border_style(border);
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
+    frame.render_widget(block, areas.content);
 
-    let [title, rule] = [0, 1].map(|row| Rect {
-        y: inner.y + row,
-        height: 1,
-        ..inner
-    });
+    let rule = Rect {
+        y: areas.command.y + 1,
+        ..areas.command
+    };
+    frame.render_widget(
+        Line::styled("─".repeat(usize::from(rule.width)), theme.rule),
+        rule,
+    );
+}
+
+/// The active command and its status. The compact layout has no sidebar, so
+/// there the row names the command instead of showing its command line.
+fn draw_command(frame: &mut Frame, areas: &Areas, app: &App, theme: &Theme) {
+    let pane = app.active_pane();
     let state = match pane.status() {
         Status::Running => Line::styled("● running", theme.muted),
         Status::Exited(0) => Line::styled("✓ exited 0", theme.ok),
         Status::Exited(code) => Line::styled(format!("✕ exited {code}"), theme.error),
     };
-    // Only the first line of a multi-line command fits.
-    let command = pane.command().lines().next().unwrap_or_default();
-    split_row(frame, title, Line::styled(command, theme.muted), state);
-    frame.render_widget(
-        Line::styled("─".repeat(usize::from(rule.width)), theme.rule),
-        rule,
-    );
+    let left = if areas.compact {
+        Span::styled(
+            format!(
+                " {}/{} {} ",
+                app.active() + 1,
+                app.panes().len(),
+                pane.name()
+            ),
+            Style::new().fg(Color::Black).bg(theme.tab(app.active())),
+        )
+    } else {
+        // Only the first line of a multi-line command fits.
+        let command = pane.command().lines().next().unwrap_or_default();
+        Span::styled(command, theme.muted)
+    };
+    split_row(frame, areas.command, Line::from(left), state);
 }
 
 #[cfg(test)]
