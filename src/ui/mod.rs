@@ -259,6 +259,7 @@ fn footer(app: &App, theme: &Theme) -> Vec<Span<'static>> {
                 ("tab", "switch"),
                 ("↑/↓", "scroll"),
                 ("r", "restart"),
+                ("c", "clear"),
                 ("i", "input"),
                 ("q", "quit"),
             ],

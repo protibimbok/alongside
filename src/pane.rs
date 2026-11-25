@@ -130,6 +130,17 @@ impl Pane {
         self.unseen |= self.screen().scrollback() > 0;
     }
 
+    pub fn clear(&mut self) {
+        let screen = self.screen();
+        let (rows, cols) = screen.size();
+        // Keeps the modes the command set, such as application cursor keys.
+        let modes = screen.input_mode_formatted();
+        self.parser = new_parser(PaneSize { rows, cols });
+        self.parser.process(&modes);
+        self.history = 0;
+        self.unseen = false;
+    }
+
     pub fn set_exited(&mut self, code: u32) {
         self.status = Status::Exited(code);
     }

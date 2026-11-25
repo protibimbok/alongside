@@ -172,6 +172,7 @@ impl App {
             KeyCode::Char('q') => self.quit = true,
             KeyCode::Char('r') => self.restart(),
             KeyCode::Char('i') => self.mode = Mode::Input,
+            KeyCode::Char('c') => self.panes[self.active].clear(),
             KeyCode::Up | KeyCode::Char('k') => return self.scroll(1),
             KeyCode::Down | KeyCode::Char('j') => return self.scroll(-1),
             KeyCode::PageUp => return self.scroll(page),
