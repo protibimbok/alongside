@@ -98,7 +98,8 @@ concurtui -n web,api,test "npm run dev" "npm run api" "cargo watch -x test"
 Each argument is one command, run with `sh -c` (`cmd /C` on Windows).
 `-n/--names` sets the sidebar labels; without it, they show the command text.
 Labels longer than 20 characters are cut short. `-t/--title` adds a top row
-with that text and the working directory.
+with that text and the working directory. `-s/--stream` starts in
+[stream mode](#stream-mode).
 
 The sidebar marks each command as starting (a spinner), running (its number),
 exited successfully (green `✓`) or failed (red `✕`); the exit code is shown
@@ -119,6 +120,8 @@ bottom line just points at the help (`h`).
 | Click on a sidebar entry        | Switch to that command                       |
 | `r`                             | Restart the current command                  |
 | `c`                             | Clear the current command's output           |
+| `s` / `t`                       | Stream mode / back to one command at a time  |
+| `f`                             | Choose the commands the stream shows         |
 | `↑` / `↓`, `k` / `j`            | Scroll one line                              |
 | `PgUp` / `PgDn`, mouse wheel    | Scroll one page / three lines                |
 | Click / drag the scrollbar      | Jump to that part of the output              |
@@ -131,6 +134,23 @@ bottom line just points at the help (`h`).
 
 Search ignores case and marks matches as you type. `Enter` keeps the search
 and jumps to the most recent match; `Esc` cancels it, or clears it afterwards.
+
+### Stream mode
+
+`s` shows the output of every command in one log, in the order it arrived,
+with each line labelled by its command. The log takes the sidebar's place.
+Scrolling and search work on it, and `c` clears it. `t` returns to the command
+you were on; picking a command with a number key or `Tab` leaves stream mode
+too.
+
+`f` filters the log: the bottom line lists the commands, `1`–`9` hide or show
+a command's lines, and `f` or `Esc` closes the filter. At least one command
+stays shown.
+
+The log is made of whole lines of text with their colors, so progress bars
+show up once they finish a line, and full-screen programs are better watched
+on their own. Input mode and restart apply to a single command and are not
+available here.
 
 In input mode every key goes to the current command, including `Ctrl+C`.
 `Esc` returns to normal mode. To send `Esc` itself to the command, press

@@ -34,6 +34,26 @@ pub(super) fn footer<'a>(app: &'a App, theme: &Theme, areas: &Areas) -> Vec<Span
             hints(&[("↑/↓", "scroll"), ("h", "close")], theme)
         }
         Mode::Help => hints(&[("h", "close")], theme),
+        Mode::Filter => {
+            let mut spans = vec![Span::styled("filter ", prompt)];
+            for (i, pane) in app.panes().iter().enumerate() {
+                let style = if app.stream().is_hidden(i) {
+                    Style::new().fg(theme.border).crossed_out()
+                } else {
+                    Style::new().fg(theme.tab(i))
+                };
+                let number = if i < 9 {
+                    format!("{} ", i + 1)
+                } else {
+                    String::new()
+                };
+                spans.push(Span::styled(number, style.bold()));
+                spans.push(Span::styled(pane.name(), style));
+                spans.push(Span::raw("   "));
+            }
+            spans.extend(hints(&[("f", "close")], theme));
+            spans
+        }
         Mode::Normal if search.is_active() => {
             let (label, style) = if search.count() == 0 {
                 ("[no matches]".to_string(), Style::new().fg(theme.error))
@@ -55,6 +75,18 @@ pub(super) fn footer<'a>(app: &'a App, theme: &Theme, areas: &Areas) -> Vec<Span
             spans
         }
         Mode::Normal if compact => hints(&[("h", "help")], theme),
+        Mode::Normal if app.streaming() => hints(
+            &[
+                ("t", "tabs"),
+                ("f", "filter"),
+                ("↑/↓", "scroll"),
+                ("c", "clear"),
+                ("/", "search"),
+                ("h", "help"),
+                ("q", "quit"),
+            ],
+            theme,
+        ),
         Mode::Normal => hints(
             &[
                 ("tab", "switch"),
@@ -62,6 +94,7 @@ pub(super) fn footer<'a>(app: &'a App, theme: &Theme, areas: &Areas) -> Vec<Span
                 ("r", "restart"),
                 ("/", "search"),
                 ("i", "input"),
+                ("s", "stream"),
                 ("h", "help"),
                 ("q", "quit"),
             ],
@@ -84,17 +117,22 @@ fn hints(keys: &[(&'static str, &'static str)], theme: &Theme) -> Vec<Span<'stat
 
 /// Right side of the footer: the scroll position and the input mode.
 pub(super) fn status(app: &App, theme: &Theme) -> Line<'static> {
-    let pane = app.active_pane();
+    let view = app.view();
     let mut spans = Vec::new();
-    if pane.has_unseen_output() {
+    if app.streaming() && app.stream().is_filtered() {
+        spans.push(Span::styled("◆ filtered ", theme.warn));
+    }
+    if view.has_unseen_output() {
         spans.push(Span::styled("↓ new output ", theme.warn));
     }
-    let scrollback = pane.screen().scrollback();
+    let scrollback = view.screen().scrollback();
     if scrollback > 0 {
         spans.push(Span::styled(format!("↑{scrollback} "), theme.warn));
     }
     let (label, color) = match app.mode() {
+        Mode::Normal if app.streaming() => (" STREAM ", theme.accent),
         Mode::Normal => (" NORMAL ", theme.accent),
+        Mode::Filter => (" FILTER ", theme.warn),
         Mode::Help => (" HELP ", theme.accent),
         Mode::Search => (" SEARCH ", theme.warn),
         Mode::Input => (" INPUT ", theme.input),

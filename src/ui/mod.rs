@@ -29,14 +29,16 @@ pub use theme::Theme;
 
 pub fn draw(frame: &mut Frame, app: &App, theme: &Theme) {
     let areas = Areas::new(frame.area(), app.sidebar_width(), app.title().is_some());
-    let pane = app.active_pane();
-    let screen = pane.screen();
+    let view = app.view();
+    let screen = view.screen();
 
     if !areas.compact {
         if let Some(title) = app.title() {
             draw_header(frame, areas.header, title, app.cwd(), theme);
         }
-        draw_sidebar(frame, areas.sidebar, app, theme);
+        if !app.streaming() {
+            draw_sidebar(frame, areas.sidebar, app, theme);
+        }
         draw_content_box(frame, &areas, app, theme);
     }
     draw_command(frame, &areas, app, theme);
@@ -51,10 +53,10 @@ pub fn draw(frame: &mut Frame, app: &App, theme: &Theme) {
             frame.buffer_mut(),
             areas.pane,
             app.search(),
-            pane.top_line(),
+            view.top_line(),
         );
     }
-    draw_scrollbar(frame.buffer_mut(), areas.scrollbar, pane, theme);
+    draw_scrollbar(frame.buffer_mut(), areas.scrollbar, view, theme);
 
     if app.mode() == Mode::Help {
         draw_help(frame, &areas, app.help_scroll(), theme);
@@ -98,7 +100,7 @@ fn split_row(frame: &mut Frame, area: Rect, left: Line, right: Line) {
 fn draw_content_box(frame: &mut Frame, areas: &Areas, app: &App, theme: &Theme) {
     let border = match app.mode() {
         Mode::Input | Mode::InputLiteral => theme.input,
-        Mode::Normal | Mode::Search | Mode::Help => theme.accent,
+        Mode::Normal | Mode::Search | Mode::Help | Mode::Filter => theme.accent,
     };
     let block = Block::bordered()
         .border_type(BorderType::Rounded)
@@ -115,9 +117,31 @@ fn draw_content_box(frame: &mut Frame, areas: &Areas, app: &App, theme: &Theme) 
     );
 }
 
-/// The active command and its status. The compact layout has no sidebar, so
-/// there the row names the command instead of showing its command line.
+/// The active command and its status, or in stream mode how many commands
+/// are shown and running. The compact layout has no sidebar, so there the row
+/// names the command instead of showing its command line.
 fn draw_command(frame: &mut Frame, areas: &Areas, app: &App, theme: &Theme) {
+    let chip = |text: String, color| Span::styled(text, Style::new().fg(Color::Black).bg(color));
+    let panes = app.panes();
+    if app.streaming() {
+        let count = panes.len();
+        let shown = (0..count).filter(|&i| !app.stream().is_hidden(i)).count();
+        let running = panes
+            .iter()
+            .filter(|pane| matches!(pane.status(), Status::Running))
+            .count();
+        let left = match (areas.compact, shown == count) {
+            (true, _) => chip(format!(" stream {shown}/{count} "), theme.accent),
+            (false, true) => Span::styled("output of every command", theme.muted),
+            (false, false) => Span::styled(
+                format!("output of {shown} of {count} commands"),
+                theme.muted,
+            ),
+        };
+        let state = Line::styled(format!("● {running}/{count} running"), theme.muted);
+        return split_row(frame, areas.command, Line::from(left), state);
+    }
+
     let pane = app.active_pane();
     let state = match pane.status() {
         Status::Running => Line::styled("● running", theme.muted),
@@ -125,14 +149,9 @@ fn draw_command(frame: &mut Frame, areas: &Areas, app: &App, theme: &Theme) {
         Status::Exited(code) => Line::styled(format!("✕ exited {code}"), theme.error),
     };
     let left = if areas.compact {
-        Span::styled(
-            format!(
-                " {}/{} {} ",
-                app.active() + 1,
-                app.panes().len(),
-                pane.name()
-            ),
-            Style::new().fg(Color::Black).bg(theme.tab(app.active())),
+        chip(
+            format!(" {}/{} {} ", app.active() + 1, panes.len(), pane.name()),
+            theme.tab(app.active()),
         )
     } else {
         // Only the first line of a multi-line command fits.

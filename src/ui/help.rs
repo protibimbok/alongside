@@ -5,11 +5,13 @@ use ratatui::widgets::{Block, BorderType, Clear};
 
 use super::{Areas, Theme};
 
-const KEYS: [(&str, &str); 14] = [
+const KEYS: [(&str, &str); 16] = [
     ("tab / shift+tab", "next / previous command"),
     ("1–9", "nth command"),
     ("r", "restart command"),
     ("c", "clear output"),
+    ("s / t", "stream / tabs view"),
+    ("f", "filter the stream"),
     ("↑ / ↓  k / j", "scroll one line"),
     ("pgup / pgdn", "scroll one page"),
     ("g / G", "top / bottom"),

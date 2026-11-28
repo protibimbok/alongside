@@ -64,7 +64,7 @@ fn small_terminals_get_the_compact_layout() {
 fn help_fills_a_compact_screen_and_floats_on_a_full_one() {
     assert_eq!(areas(40, 24).help, Rect::new(1, 0, 38, 23));
     assert_eq!(areas(40, 24).max_help_scroll(), 0);
-    assert_eq!(areas(80, 9).max_help_scroll(), 6);
+    assert_eq!(areas(80, 9).max_help_scroll(), 8);
 
     let (width, height) = help::size();
     let full = areas(80, 40);

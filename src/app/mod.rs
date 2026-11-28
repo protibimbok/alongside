@@ -10,7 +10,9 @@ use ratatui::layout::{Position, Rect};
 
 use crate::pane::{self, Pane, Status};
 use crate::search::Search;
-use crate::ui::{self, Areas, Thumb};
+use crate::stream::Stream;
+use crate::ui::{self, Areas, Theme, Thumb};
+use crate::view::View;
 
 /// Lines scrolled per mouse wheel step.
 const WHEEL_LINES: isize = 3;
@@ -43,17 +45,22 @@ pub enum Mode {
     Search,
     /// The list of keys is shown; keys scroll or close it.
     Help,
+    /// Number keys pick the commands the stream shows.
+    Filter,
 }
 
 pub struct App {
     panes: Vec<Pane>,
     active: usize,
+    stream: Stream,
+    streaming: bool,
     quit: bool,
     mode: Mode,
     /// While the scrollbar is dragged: the row of the thumb that is held.
     drag: Option<usize>,
     search: Search,
     help_scroll: u16,
+    screen: Rect,
     areas: Areas,
     sidebar_width: u16,
     title: Option<String>,
@@ -66,6 +73,7 @@ impl App {
         commands: &[String],
         names: &[String],
         title: Option<String>,
+        streaming: bool,
         (cols, rows): (u16, u16),
         tx: Sender<Msg>,
     ) -> Result<Self> {
@@ -78,24 +86,35 @@ impl App {
             })
             .collect();
         let sidebar_width = ui::sidebar_width(names.iter().map(String::as_str));
-        let areas = Areas::new(Rect::new(0, 0, cols, rows), sidebar_width, title.is_some());
+        let screen = Rect::new(0, 0, cols, rows);
+        let tabs = Areas::new(screen, sidebar_width, title.is_some());
+        let wide = Areas::new(screen, 0, title.is_some());
+        let theme = Theme::detect();
+        let labels = names.iter().enumerate();
+        let stream = Stream::new(
+            labels.map(|(i, name)| (name.as_str(), theme.tab(i))),
+            wide.pane_size(),
+        );
         let panes = names
             .into_iter()
             .zip(commands)
             .enumerate()
             .map(|(i, (name, command))| {
-                Pane::spawn(i, name, command.clone(), areas.pane_size(), &tx)
+                Pane::spawn(i, name, command.clone(), tabs.pane_size(), &tx)
             })
             .collect::<Result<_>>()?;
         Ok(Self {
             panes,
             active: 0,
+            stream,
+            streaming,
             quit: false,
             mode: Mode::Normal,
             drag: None,
             search: Search::default(),
             help_scroll: 0,
-            areas,
+            screen,
+            areas: if streaming { wide } else { tabs },
             sidebar_width,
             title,
             cwd: working_dir(),
@@ -115,6 +134,31 @@ impl App {
         &self.panes[self.active]
     }
 
+    pub fn stream(&self) -> &Stream {
+        &self.stream
+    }
+
+    pub fn streaming(&self) -> bool {
+        self.streaming
+    }
+
+    /// The output on screen: the stream, or the active command's.
+    pub fn view(&self) -> &View {
+        if self.streaming {
+            self.stream.view()
+        } else {
+            self.panes[self.active].view()
+        }
+    }
+
+    fn view_mut(&mut self) -> &mut View {
+        if self.streaming {
+            self.stream.view_mut()
+        } else {
+            self.panes[self.active].view_mut()
+        }
+    }
+
     pub fn mode(&self) -> Mode {
         self.mode
     }
@@ -127,8 +171,17 @@ impl App {
         self.help_scroll
     }
 
+    /// The stream has no sidebar: its lines name their command themselves.
     pub fn sidebar_width(&self) -> u16 {
-        self.sidebar_width
+        if self.streaming {
+            0
+        } else {
+            self.sidebar_width
+        }
+    }
+
+    fn layout(&self, sidebar_width: u16) -> Areas {
+        Areas::new(self.screen, sidebar_width, self.title.is_some())
     }
 
     pub fn title(&self) -> Option<&str> {
@@ -151,11 +204,14 @@ impl App {
     pub fn handle(&mut self, msg: Msg) -> bool {
         match msg {
             Msg::Output { id, bytes } if self.is_current(id) => {
-                self.panes[id.pane].process(&bytes);
-                id.pane == self.active
+                self.panes[id.pane].view_mut().process(&bytes);
+                self.stream.push(id.pane, &bytes);
+                self.streaming || id.pane == self.active
             }
             Msg::Exited { id, code } if self.is_current(id) => {
                 self.panes[id.pane].set_exited(code);
+                self.stream
+                    .end(id.pane, &format!("exited with code {code}"));
                 if self
                     .panes
                     .iter()
@@ -213,6 +269,7 @@ impl App {
             Mode::Normal => {}
             Mode::Search => return self.on_search_key(key),
             Mode::Help => return self.on_help_key(key),
+            Mode::Filter => return self.on_filter_key(key),
             Mode::Input | Mode::InputLiteral => return self.on_input_key(key),
         }
         let count = self.panes.len();
@@ -220,14 +277,21 @@ impl App {
         match key.code {
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => self.quit = true,
             KeyCode::Char('q') => self.quit = true,
-            KeyCode::Char('r') => self.restart(),
-            KeyCode::Char('i') => self.mode = Mode::Input,
+            KeyCode::Char('s') if !self.streaming => self.show_stream(true),
+            KeyCode::Char('t') if self.streaming => self.show_stream(false),
+            KeyCode::Char('f') if self.streaming => self.mode = Mode::Filter,
+            KeyCode::Char('r') if !self.streaming => self.restart(),
+            KeyCode::Char('i') if !self.streaming => self.mode = Mode::Input,
             KeyCode::Char('h') => {
                 self.help_scroll = 0;
                 self.mode = Mode::Help;
             }
             KeyCode::Char('c') => {
-                self.panes[self.active].clear();
+                if self.streaming {
+                    self.stream.clear();
+                } else {
+                    self.view_mut().clear();
+                }
                 self.find();
             }
             KeyCode::Char('/') => {
@@ -241,8 +305,8 @@ impl App {
             KeyCode::Down | KeyCode::Char('j') => return self.scroll(-1),
             KeyCode::PageUp => return self.scroll(page),
             KeyCode::PageDown => return self.scroll(-page),
-            KeyCode::Char('g') => self.panes[self.active].scroll_to(usize::MAX),
-            KeyCode::Char('G') => self.panes[self.active].scroll_to_bottom(),
+            KeyCode::Char('g') => self.view_mut().scroll_to(usize::MAX),
+            KeyCode::Char('G') => self.view_mut().scroll_to_bottom(),
             KeyCode::Tab => self.select((self.active + 1) % count),
             KeyCode::BackTab => self.select((self.active + count - 1) % count),
             KeyCode::Char(c @ '1'..='9') => {
@@ -270,6 +334,21 @@ impl App {
         true
     }
 
+    /// Filter mode: a number key hides or shows that command in the stream.
+    fn on_filter_key(&mut self, key: KeyEvent) -> bool {
+        match key.code {
+            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => self.quit = true,
+            KeyCode::Char('f' | 'q') | KeyCode::Esc | KeyCode::Enter => self.mode = Mode::Normal,
+            KeyCode::Char(c @ '1'..='9') => {
+                let toggled = self.stream.toggle(c as usize - '1' as usize);
+                self.find();
+                return toggled;
+            }
+            _ => return false,
+        }
+        true
+    }
+
     fn scroll_help(&mut self, lines: isize) -> bool {
         let before = self.help_scroll;
         let to = usize::from(before).saturating_add_signed(lines);
@@ -292,7 +371,7 @@ impl App {
                 self.mode = Mode::Normal;
                 self.find();
                 if let Some(line) = self.search.select_last() {
-                    self.panes[self.active].show_line(line);
+                    self.view_mut().show_line(line);
                 }
             }
             KeyCode::Backspace => {
@@ -308,23 +387,32 @@ impl App {
         true
     }
 
-    /// Looks the search up again in the active pane, whose output may have
+    /// Looks the search up again in the output on screen, which may have
     /// changed since.
     fn find(&mut self) {
         if self.search.is_active() {
-            self.search.update(&self.panes[self.active].lines());
+            let lines = self.view_mut().lines();
+            self.search.update(&lines);
         }
     }
 
     fn step_match(&mut self, forward: bool) {
         self.find();
         if let Some(line) = self.search.step(forward) {
-            self.panes[self.active].show_line(line);
+            self.view_mut().show_line(line);
         }
     }
 
+    /// Shows command `pane`, leaving the stream.
     fn select(&mut self, pane: usize) {
         self.active = pane;
+        self.show_stream(false);
+    }
+
+    fn show_stream(&mut self, streaming: bool) {
+        self.streaming = streaming;
+        self.areas = self.layout(self.sidebar_width());
+        self.help_scroll = self.help_scroll.min(self.areas.max_help_scroll());
         self.find();
     }
 
@@ -346,24 +434,24 @@ impl App {
         }
 
         let pane = &mut self.panes[self.active];
-        if let Some(bytes) = encode_key(key, pane.screen().application_cursor()) {
+        if let Some(bytes) = encode_key(key, pane.view().screen().application_cursor()) {
             pane.write(&bytes);
         }
         // Typing jumps back to the live screen.
-        pane.scroll_to_bottom();
+        pane.view_mut().scroll_to_bottom();
         true
     }
 
     fn scroll(&mut self, lines: isize) -> bool {
-        self.panes[self.active].scroll(lines)
+        self.view_mut().scroll(lines)
     }
 
     /// Starts a drag. Pressing the track brings the middle of the thumb there;
     /// pressing the thumb holds it where it is.
     fn grab_scrollbar(&mut self, row: u16) -> bool {
-        let pane = &self.panes[self.active];
+        let view = self.view();
         let track = self.areas.scrollbar;
-        let Some(thumb) = Thumb::new(track.height.into(), pane.history(), pane.top_line()) else {
+        let Some(thumb) = Thumb::new(track.height.into(), view.history(), view.top_line()) else {
             return false;
         };
         let at = usize::from(row - track.y);
@@ -379,17 +467,17 @@ impl App {
         let Some(held) = self.drag else {
             return false;
         };
-        let pane = &mut self.panes[self.active];
         let track = self.areas.scrollbar;
+        let view = self.view_mut();
         let height = usize::from(track.height);
-        let history = pane.history();
-        let Some(thumb) = Thumb::new(height, history, pane.top_line()) else {
+        let history = view.history();
+        let Some(thumb) = Thumb::new(height, history, view.top_line()) else {
             return false;
         };
         let top = usize::from(row.saturating_sub(track.y)).saturating_sub(held);
-        let before = pane.screen().scrollback();
-        pane.scroll_to(history - thumb.top_line(height, history, top));
-        pane.screen().scrollback() != before
+        let before = view.screen().scrollback();
+        view.scroll_to(history - thumb.top_line(height, history, top));
+        view.screen().scrollback() != before
     }
 
     fn is_current(&self, id: Id) -> bool {
@@ -397,19 +485,22 @@ impl App {
     }
 
     fn restart(&mut self) {
-        self.panes[self.active].restart(self.areas.pane_size(), &self.tx);
+        let size = self.layout(self.sidebar_width).pane_size();
+        self.panes[self.active].restart(size, &self.tx);
+        self.stream.end(self.active, "restarted");
         self.find();
     }
 
     fn resize(&mut self, cols: u16, rows: u16) {
-        self.areas = Areas::new(
-            Rect::new(0, 0, cols, rows),
-            self.sidebar_width,
-            self.title.is_some(),
-        );
+        self.screen = Rect::new(0, 0, cols, rows);
+        self.areas = self.layout(self.sidebar_width());
+        // Commands keep the size they have next to the sidebar, so switching
+        // to the stream and back doesn't make them redraw.
+        let size = self.layout(self.sidebar_width).pane_size();
         for pane in &mut self.panes {
-            pane.resize(self.areas.pane_size());
+            pane.resize(size);
         }
+        self.stream.resize(self.layout(0).pane_size());
         self.help_scroll = self.help_scroll.min(self.areas.max_help_scroll());
         self.find();
     }

@@ -3,7 +3,9 @@ mod pane;
 mod process;
 mod search;
 mod size;
+mod stream;
 mod ui;
+mod view;
 
 use std::io::{self, Stdout};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
@@ -34,6 +36,10 @@ struct Cli {
     #[arg(short, long)]
     title: Option<String>,
 
+    /// Starts in stream mode: every command's output in one log
+    #[arg(short, long)]
+    stream: bool,
+
     /// Commands to run, each one quoted as a single argument
     #[arg(required = true, value_name = "COMMAND")]
     commands: Vec<String>,
@@ -52,6 +58,7 @@ fn main() -> Result<()> {
         &cli.commands,
         &cli.names,
         cli.title,
+        cli.stream,
         crossterm::terminal::size()?,
         tx.clone(),
     )?;

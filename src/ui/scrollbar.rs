@@ -1,7 +1,7 @@
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 
-use crate::pane::Pane;
+use crate::view::View;
 
 use super::Theme;
 
@@ -36,9 +36,9 @@ impl Thumb {
     }
 }
 
-pub(super) fn draw_scrollbar(buf: &mut Buffer, area: Rect, pane: &Pane, theme: &Theme) {
+pub(super) fn draw_scrollbar(buf: &mut Buffer, area: Rect, view: &View, theme: &Theme) {
     let height = usize::from(area.height);
-    let Some(thumb) = Thumb::new(height, pane.history(), pane.top_line()) else {
+    let Some(thumb) = Thumb::new(height, view.history(), view.top_line()) else {
         return;
     };
     for (i, position) in area.positions().enumerate() {
