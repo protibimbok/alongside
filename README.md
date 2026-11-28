@@ -3,6 +3,8 @@
 Run several commands in parallel and switch between their output in a
 full-screen TUI. A minimal, zero-config alternative to `concurrently`.
 
+![concurtui switching between commands, searching output and showing the combined stream](assets/demo.gif)
+
 Each command runs in its own pseudo-terminal, so colors, progress bars and
 interactive programs work as they do in a normal terminal. One command's output
 is shown at a time, next to a sidebar listing every command and its status.
