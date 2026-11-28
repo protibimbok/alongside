@@ -1,6 +1,6 @@
 {
   "name": "@concurtui/linux-arm64",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "The linux-arm64 binary for concurtui",
   "repository": {
     "type": "git",

@@ -1,6 +1,6 @@
 {
   "name": "concurtui",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Run several commands in parallel and switch between their output in a TUI",
   "repository": {
     "type": "git",
@@ -24,10 +24,10 @@
     "node": ">=16"
   },
   "optionalDependencies": {
-    "@concurtui/linux-x64": "0.1.0",
-    "@concurtui/linux-arm64": "0.1.0",
-    "@concurtui/darwin-x64": "0.1.0",
-    "@concurtui/darwin-arm64": "0.1.0",
-    "@concurtui/win32-x64": "0.1.0"
+    "@concurtui/linux-x64": "1.0.0",
+    "@concurtui/linux-arm64": "1.0.0",
+    "@concurtui/darwin-x64": "1.0.0",
+    "@concurtui/darwin-arm64": "1.0.0",
+    "@concurtui/win32-x64": "1.0.0"
   }
 }
