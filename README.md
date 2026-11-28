@@ -156,6 +156,10 @@ In input mode every key goes to the current command, including `Ctrl+C`.
 `Esc` returns to normal mode. To send `Esc` itself to the command, press
 `Ctrl+A` then `Esc` (`Ctrl+A` twice sends `Ctrl+A`).
 
+On quit, the output is printed to the terminal, so it stays in the scrollback:
+the log as it was shown if you quit in stream mode, and otherwise every
+command's output in turn, each under its name.
+
 On quit, every command's process group gets `SIGTERM` and has 3 seconds to
 exit before being killed with `SIGKILL`. On Windows the process tree is
 killed.

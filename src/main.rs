@@ -7,7 +7,7 @@ mod stream;
 mod ui;
 mod view;
 
-use std::io::{self, Stdout};
+use std::io::{self, Stdout, Write};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -68,7 +68,9 @@ fn main() -> Result<()> {
     {
         let mut tui = Tui::enter()?;
         run(&mut tui.terminal, &mut app, tx, &rx)
-    }
+    }?;
+    io::stdout().write_all(&app.transcript())?;
+    Ok(())
 }
 
 fn run(

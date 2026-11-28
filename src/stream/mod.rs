@@ -121,6 +121,20 @@ impl Stream {
         true
     }
 
+    pub fn formatted(&self) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        for line in &self.lines {
+            let source = &self.sources[line.source];
+            if !source.hidden {
+                bytes.extend(&source.label);
+                bytes.extend(&line.text);
+                bytes.extend(RESET);
+                bytes.push(b'\n');
+            }
+        }
+        bytes
+    }
+
     fn append(&mut self, source: usize, lines: Vec<Vec<u8>>) {
         let mut bytes = Vec::new();
         for text in lines {

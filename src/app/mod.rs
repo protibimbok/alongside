@@ -6,6 +6,8 @@ use anyhow::Result;
 use crossterm::event::{
     Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind,
 };
+use crossterm::style::SetForegroundColor;
+use ratatui::backend::IntoCrossterm;
 use ratatui::layout::{Position, Rect};
 
 use crate::pane::{self, Pane, Status};
@@ -194,6 +196,29 @@ impl App {
 
     pub fn should_quit(&self) -> bool {
         self.quit
+    }
+
+    /// The output to leave in the terminal after the TUI
+    pub fn transcript(&mut self) -> Vec<u8> {
+        if self.streaming {
+            return self.stream.formatted();
+        }
+        let theme = Theme::detect();
+        let mut bytes = Vec::new();
+        for (i, pane) in self.panes.iter_mut().enumerate() {
+            if i > 0 {
+                bytes.push(b'\n');
+            }
+            let color = SetForegroundColor(theme.tab(i).into_crossterm());
+            let status = match pane.status() {
+                Status::Running => String::new(),
+                Status::Exited(code) => format!(" \x1b[2mexited with code {code}"),
+            };
+            let name = pane.name();
+            bytes.extend(format!("\x1b[1m{color}{name}\x1b[m{status}\x1b[m\n").into_bytes());
+            bytes.extend(pane.view_mut().formatted());
+        }
+        bytes
     }
 
     pub fn animating(&self) -> bool {

@@ -109,3 +109,16 @@ fn clearing_drops_every_line() {
     stream.push(0, b"2\n");
     assert_eq!(text(&mut stream), ["a │ 2"]);
 }
+
+#[test]
+fn formatted_has_the_shown_lines_with_their_labels() {
+    let mut stream = stream(&["a", "b"], 20);
+    assert_eq!(stream.formatted(), b"");
+    stream.push(0, b"one\n");
+    stream.push(1, b"two\n");
+    stream.toggle(1);
+    let printed = String::from_utf8(stream.formatted()).unwrap();
+    assert!(printed.contains("one"));
+    assert!(!printed.contains("two"));
+    assert!(printed.ends_with("one\x1b[m\n"));
+}

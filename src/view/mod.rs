@@ -86,23 +86,51 @@ impl View {
 
     /// All of the output as text, scrollback included, from the top.
     pub fn lines(&mut self) -> Vec<String> {
-        let (rows, cols) = self.screen().size();
+        self.all_rows(|screen| screen.rows(0, screen.size().1).collect())
+    }
+
+    /// All of the output with its colors, scrollback included, as bytes to
+    /// print on a terminal. Rows that wrapped are joined back into one line.
+    pub fn formatted(&mut self) -> Vec<u8> {
+        let mut rows = self.all_rows(|screen| {
+            let wrapped = (0..).map(|row| screen.row_wrapped(row));
+            screen
+                .rows_formatted(0, screen.size().1)
+                .zip(wrapped)
+                .collect()
+        });
+        while rows.last().is_some_and(|(row, _)| row.is_empty()) {
+            rows.pop();
+        }
+        let mut bytes = Vec::new();
+        for (row, wrapped) in rows {
+            bytes.extend(row);
+            if !wrapped {
+                bytes.extend(b"\x1b[m\n");
+            }
+        }
+        bytes
+    }
+
+    /// Collects every row from the top of the scrollback, a page at a time.
+    fn all_rows<T>(&mut self, page: impl Fn(&vt100::Screen) -> Vec<T>) -> Vec<T> {
+        let rows = self.screen().size().0;
         let at = self.screen().scrollback();
-        let mut lines = Vec::with_capacity(self.history + usize::from(rows));
+        let mut all = Vec::with_capacity(self.history + usize::from(rows));
         let mut offset = self.history;
         loop {
             self.parser.screen_mut().set_scrollback(offset);
             // The last page overlaps the one before it unless the history
             // is a whole number of pages.
-            let seen = lines.len() - (self.history - offset);
-            lines.extend(self.screen().rows(0, cols).skip(seen));
+            let seen = all.len() - (self.history - offset);
+            all.extend(page(self.screen()).into_iter().skip(seen));
             if offset == 0 {
                 break;
             }
             offset = offset.saturating_sub(usize::from(rows));
         }
         self.parser.screen_mut().set_scrollback(at);
-        lines
+        all
     }
 
     /// vt100 doesn't expose how much scrollback it holds, but it does clamp
@@ -115,3 +143,6 @@ impl View {
         screen.set_scrollback(at);
     }
 }
+
+#[cfg(test)]
+mod tests;
